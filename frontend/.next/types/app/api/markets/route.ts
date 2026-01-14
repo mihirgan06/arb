@@ -1,4 +1,4 @@
-// File: /Users/augustin/dev/work/Arbiter/src/app/api/markets/route.ts
+// File: /Users/augustin/dev/work/Arbiter/frontend/src/app/api/markets/route.ts
 import * as entry from '../../../../../src/app/api/markets/route.js'
 import type { NextRequest } from 'next/server.js'
 
