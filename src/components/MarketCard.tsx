@@ -73,3 +73,4 @@ export function MarketCard({ market, index }: { market: Market; index: number })
   );
 }
 
+
