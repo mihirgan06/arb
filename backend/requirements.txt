@@ -1,0 +1,14 @@
+fastapi
+uvicorn[standard]
+sqlmodel
+alembic
+python-dotenv
+psycopg2-binary
+pydantic-settings
+pydantic[email]
+jinja2
+typer
+ruff
+pytest
+httpx
+scrapy
