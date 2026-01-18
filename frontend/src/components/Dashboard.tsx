@@ -20,6 +20,8 @@ interface Opportunity extends ArbitrageOpportunity {
 export function Dashboard() {
   const [opps, setOpps] = useState<Opportunity[]>([]);
   const [loading, setLoading] = useState(true);
+  const [scanning, setScanning] = useState(false);
+  const [scanStatus, setScanStatus] = useState("");
   const [loadingMore, setLoadingMore] = useState(false);
   const [selected, setSelected] = useState<Opportunity | null>(null);
   const [showWhy, setShowWhy] = useState(false);
@@ -28,35 +30,66 @@ export function Dashboard() {
   const [hasMore, setHasMore] = useState(false);
   const hasFetched = useRef(false);
 
+  const fetchOpportunities = async () => {
+    const r = await fetch("/api/arbitrage/opportunities?page=0&limit=15");
+    const d = await r.json();
+    if (d.success && d.opportunities) {
+      setOpps(d.opportunities);
+      setHasMore(d.hasMore || false);
+      if (d.opportunities.length > 0) setSelected(d.opportunities[0]);
+      return d.opportunities.length;
+    }
+    return 0;
+  };
+
+  const runScraper = async () => {
+    setScanning(true);
+    setScanStatus("Scanning markets with AI...");
+    try {
+      const r = await fetch("/api/arbitrage/scraper?maxCalls=50", { method: "POST" });
+      const d = await r.json();
+      if (d.success) {
+        setScanStatus(`Found ${d.newCorrelations} new correlations!`);
+        // Refresh opportunities list
+        await fetchOpportunities();
+      }
+    } catch (e) {
+      setScanStatus("Scan failed - retrying...");
+      console.error(e);
+    }
+    finally { 
+      setScanning(false);
+      setTimeout(() => setScanStatus(""), 3000);
+    }
+  };
+
   useEffect(() => {
     if (hasFetched.current) return;
     hasFetched.current = true;
     
-    const fetchData = async () => {
+    const init = async () => {
       try {
-        const r = await fetch("/api/arbitrage/opportunities?page=0&limit=15");
-        const d = await r.json();
-        if (d.success && d.opportunities) {
-          setOpps(d.opportunities);
-          setHasMore(d.hasMore || false);
-          if (d.opportunities.length > 0) setSelected(d.opportunities[0]);
-        }
-      } catch (e) { console.error(e); }
-      finally { setLoading(false); }
+        // 1. Load from cache immediately
+        await fetchOpportunities();
+        setLoading(false);
+        
+        // 2. ALWAYS start background scraper to find more
+        runScraper();
+      } catch (e) { 
+        console.error(e); 
+        setLoading(false);
+      }
     };
-    fetchData();
+    init();
   }, []);
 
   const refresh = async () => {
     setLoading(true);
     setPage(0);
     try {
-      const r = await fetch("/api/arbitrage/opportunities?page=0&limit=15");
-      const d = await r.json();
-      if (d.success && d.opportunities) {
-        setOpps(d.opportunities);
-        setHasMore(d.hasMore || false);
-        if (d.opportunities.length > 0) setSelected(d.opportunities[0]);
+      const count = await fetchOpportunities();
+      if (count === 0 && !scanning) {
+        runScraper();
       }
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
@@ -92,18 +125,41 @@ export function Dashboard() {
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold">Polymarket Arbitrage</h1>
-          <button onClick={refresh} disabled={loading}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm disabled:opacity-50">
-            <RefreshCw className={cn("w-4 h-4", loading && "animate-spin")} /> Refresh
-          </button>
+          <div className="flex gap-2">
+            <button onClick={refresh} disabled={loading}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm disabled:opacity-50">
+              <RefreshCw className={cn("w-4 h-4", loading && "animate-spin")} /> Refresh
+            </button>
+          </div>
         </div>
+
+        {/* Scanning Status Bar */}
+        {(scanning || scanStatus) && (
+          <div className="mb-4 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30">
+            <div className="flex items-center gap-3">
+              {scanning && <Loader2 className="w-5 h-5 animate-spin text-emerald-500" />}
+              <span className="text-emerald-400 text-sm">
+                {scanStatus || "Scanning markets with AI..."}
+              </span>
+              {!scanning && scanStatus && (
+                <button onClick={() => runScraper()} className="ml-auto text-xs text-emerald-500 hover:underline">
+                  Scan Again
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         {loading ? (
           <div className="flex items-center justify-center h-64">
             <Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
           </div>
         ) : opps.length === 0 ? (
-          <div className="text-center py-20 text-zinc-500">No opportunities found</div>
+          <div className="text-center py-20">
+            <p className="text-zinc-500 mb-4">
+              {scanning ? "Scanning Polymarket for arbitrage opportunities..." : "No opportunities in cache"}
+            </p>
+          </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* LEFT: List */}
