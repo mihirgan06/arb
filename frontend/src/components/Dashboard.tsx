@@ -13,7 +13,8 @@ import {
   BarChart2,
   Shield,
   Info,
-  X
+  X,
+  Command
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -216,27 +217,42 @@ export function Dashboard({ tabSwitcher }: DashboardProps) {
   return (
     <div className="flex flex-col h-full bg-[#000000] text-zinc-300 font-sans selection:bg-blue-900 selection:text-white">
       {/* 1. TOP BAR: Global Stats & Controls */}
-      <header className="h-12 border-b border-zinc-800 bg-[#050505] flex items-center justify-between px-4 shrink-0">
-        <div className="flex items-center">
-          <div className="flex gap-6 text-xs font-sans tracking-wide">
-            <div className="flex gap-2">
-              <span className="text-zinc-500 uppercase tracking-widest font-bold">Arbitrage Opportunities</span>
-              <span className="text-zinc-100 font-mono">{totalCount}</span>
+      <header className="h-11 border-b border-zinc-800/50 bg-[#0a0a0a] flex items-center justify-between px-4 shrink-0">
+        <div className="flex items-center gap-6">
+          {/* Logo */}
+          <div className="flex items-center gap-2.5">
+            <div className="h-6 w-6 rounded-md bg-white/10 flex items-center justify-center">
+              <Command className="h-3.5 w-3.5 text-white/80" />
             </div>
+            <span className="text-sm font-semibold text-white/90 tracking-tight">Arbiter</span>
           </div>
+          
+          {/* Divider */}
+          <div className="h-4 w-px bg-zinc-800" />
+          
+          {/* Tab Switcher */}
           {tabSwitcher}
+          
+          {/* Divider */}
+          <div className="h-4 w-px bg-zinc-800" />
+          
+          {/* Stats */}
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-zinc-600">{totalCount} opportunities</span>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
+        
+        <div className="flex items-center gap-3">
           <button 
             onClick={scanMarkets}
             disabled={scanning}
-            className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold uppercase tracking-widest transition-colors disabled:opacity-50 rounded-sm"
+            className="px-3 py-1 bg-white/5 hover:bg-white/10 border border-zinc-800 text-zinc-300 text-[11px] font-medium transition-colors disabled:opacity-50 rounded"
           >
-            {scanning ? "SCANNING..." : "SCAN MARKETS"}
+            {scanning ? "Scanning..." : "Scan"}
           </button>
           <button 
             onClick={refresh}
-            className="p-1.5 hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors rounded-full"
+            className="p-1.5 hover:bg-white/5 text-zinc-500 hover:text-zinc-300 transition-colors rounded"
           >
             <RefreshCw className={cn("w-3.5 h-3.5", loading && "animate-spin")} />
           </button>

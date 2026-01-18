@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Dashboard } from "@/components/Dashboard";
 import { Activity, Command, Globe } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { RefreshCw } from "lucide-react";
 
 type SentimentTab = "divergence" | "topics" | "trends";
 type MainTab = "terminal" | "sentiment";
@@ -13,43 +14,29 @@ export default function Home() {
   const [sentimentTab, setSentimentTab] = useState<SentimentTab>("divergence");
 
   const TabSwitcher = () => (
-    <div className="flex items-center">
-      <div className="flex items-center border-l border-zinc-800 ml-6 pl-6">
-        <button
-          onClick={() => setActiveTab("terminal")}
-          className={cn(
-            "relative px-3 py-1 text-xs font-medium tracking-wide transition-colors",
-            activeTab === "terminal"
-              ? "text-white"
-              : "text-zinc-600 hover:text-zinc-400"
-          )}
-        >
-          <span className="flex items-center gap-1.5">
-            <span className={cn(
-              "w-1.5 h-1.5 rounded-full transition-colors",
-              activeTab === "terminal" ? "bg-emerald-500" : "bg-zinc-700"
-            )} />
-            Terminal
-          </span>
-          {activeTab === "terminal" && (
-            <span className="absolute bottom-0 left-3 right-3 h-px bg-white" />
-          )}
-        </button>
-        <button
-          onClick={() => setActiveTab("sentiment")}
-          className={cn(
-            "relative px-3 py-1 text-xs font-medium tracking-wide transition-colors",
-            activeTab === "sentiment"
-              ? "text-white"
-              : "text-zinc-600 hover:text-zinc-400"
-          )}
-        >
-          Sentiment
-          {activeTab === "sentiment" && (
-            <span className="absolute bottom-0 left-3 right-3 h-px bg-white" />
-          )}
-        </button>
-      </div>
+    <div className="flex items-center gap-1">
+      <button
+        onClick={() => setActiveTab("terminal")}
+        className={cn(
+          "px-2.5 py-1 text-[11px] font-medium rounded transition-colors",
+          activeTab === "terminal"
+            ? "bg-white/10 text-white"
+            : "text-zinc-500 hover:text-zinc-300 hover:bg-white/5"
+        )}
+      >
+        Terminal
+      </button>
+      <button
+        onClick={() => setActiveTab("sentiment")}
+        className={cn(
+          "px-2.5 py-1 text-[11px] font-medium rounded transition-colors",
+          activeTab === "sentiment"
+            ? "bg-white/10 text-white"
+            : "text-zinc-500 hover:text-zinc-300 hover:bg-white/5"
+        )}
+      >
+        Sentiment
+      </button>
     </div>
   );
 
@@ -62,13 +49,20 @@ export default function Home() {
       ) : (
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Sentiment Header */}
-          <header className="h-12 border-b border-zinc-800 bg-[#050505] flex items-center justify-between px-4 shrink-0">
+          <header className="h-11 border-b border-zinc-800/50 bg-[#0a0a0a] flex items-center justify-between px-4 shrink-0">
             <div className="flex items-center gap-6">
-              <div className="flex gap-6 text-xs font-sans tracking-wide">
-                <div className="flex gap-2">
-                  <span className="text-zinc-500 uppercase tracking-widest font-bold">Sentiment Analysis</span>
+              {/* Logo */}
+              <div className="flex items-center gap-2.5">
+                <div className="h-6 w-6 rounded-md bg-white/10 flex items-center justify-center">
+                  <Command className="h-3.5 w-3.5 text-white/80" />
                 </div>
+                <span className="text-sm font-semibold text-white/90 tracking-tight">Arbiter</span>
               </div>
+              
+              {/* Divider */}
+              <div className="h-4 w-px bg-zinc-800" />
+              
+              {/* Tab Switcher */}
               <TabSwitcher />
             </div>
           </header>
