@@ -159,41 +159,98 @@ export async function GET(request: Request) {
 
 async function detectCorrelationWithLLM(q1: string, q2: string): Promise<{ correlationType: "SAME" | "OPPOSITE"; reasoning: string } | null> {
   try {
-    const prompt = `Analyze if these prediction markets are correlated for arbitrage:
+    const prompt = `You are a logic validator for a prediction-market arbitrage tool.
 
-Market 1: "${q1}"
-Market 2: "${q2}"
+Your task is to classify the EXACT logical relationship between two prediction market questions.
 
-VALID correlations:
-- Direct causal link (e.g., "Trump wins" → "Vance becomes VP")
-- Same event, different thresholds (e.g., "BTC > $100k" + "BTC > $95k")
-- Same event, different dates (e.g., "Ceasefire by Jan 31" + "Ceasefire by Mar 31")
+CRITICAL RULES:
+- Do NOT use correlation, likelihood, or intuition.
+- Only consider whether there is a HARD logical constraint at resolution.
+- Assume markets resolve strictly based on their wording.
+- If there is any uncertainty, choose UNRELATED.
+- Be conservative: false positives are worse than false negatives.
 
-INVALID:
-- Mutually exclusive (competing nominations/winners)
-- Independent events (nomination ≠ election win)
+You may ONLY choose one of the following relationship labels:
 
-Return JSON:
-{"correlated": true/false, "type": "SAME"|"OPPOSITE", "reasoning": "brief explanation"}`;
+1. EQUIVALENT
+   - Both markets always resolve the same way.
+
+2. IMPLIES_A_TO_B
+   - If Market A resolves YES, Market B MUST resolve YES.
+
+3. IMPLIES_B_TO_A
+   - If Market B resolves YES, Market A MUST resolve YES.
+
+4. SUBSET
+   - One market is strictly a subset of the other (e.g., shorter time horizon, stricter condition).
+
+5. SUPERSET
+   - One market strictly contains the other.
+
+6. MUTUALLY_EXCLUSIVE
+   - Both markets cannot resolve YES at the same time.
+
+7. UNRELATED
+   - No guaranteed logical constraint exists.
+
+Market A:
+"${q1}"
+
+Market B:
+"${q2}"
+
+Return your response ONLY as valid JSON with the following fields:
+{
+  "relationship": "<ONE_LABEL_FROM_ABOVE>",
+  "explanation": "<1–2 sentence explanation of the logical reasoning>",
+  "confidence": <number between 0 and 1>
+}
+
+If you are unsure or the relationship depends on unstated assumptions, choose UNRELATED.`;
 
     const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.3,
+      messages: [
+        {
+          role: "system",
+          content: "You are a strict logic validator. Only identify HARD logical constraints between prediction markets. Never use correlation, probability, or intuition. Be conservative - when in doubt, return UNRELATED."
+        },
+        { role: "user", content: prompt }
+      ],
+      temperature: 0.1, // Very low for consistent logical analysis
       response_format: { type: "json_object" },
     });
 
     const result = JSON.parse(response.choices[0].message.content || "{}");
-    console.log(`[LLM] "${q1.substring(0, 40)}..." vs "${q2.substring(0, 40)}..." => ${result.correlated ? 'CORRELATED' : 'NOT CORRELATED'}`);
     
-    if (result.correlated && result.type && result.reasoning) {
-      return {
-        correlationType: result.type,
-        reasoning: result.reasoning,
-      };
+    console.log(`[LLM] "${q1.substring(0, 40)}..." vs "${q2.substring(0, 40)}..." => ${result.relationship} (${result.confidence})`);
+    
+    // Only accept relationships with high confidence that enable arbitrage
+    if (result.relationship === "UNRELATED" || result.confidence < 0.7) {
+      return null;
     }
-    
-    return null;
+
+    // Map logical relationships to arbitrage correlation types
+    let correlationType: "SAME" | "OPPOSITE";
+    switch (result.relationship) {
+      case "EQUIVALENT":
+      case "IMPLIES_A_TO_B":
+      case "IMPLIES_B_TO_A":
+      case "SUBSET":
+      case "SUPERSET":
+        correlationType = "SAME";
+        break;
+      case "MUTUALLY_EXCLUSIVE":
+        correlationType = "OPPOSITE";
+        break;
+      default:
+        return null;
+    }
+
+    return {
+      correlationType,
+      reasoning: `[${result.relationship}] ${result.explanation}`,
+    };
   } catch (error) {
     console.error("[LLM] Correlation detection error:", error);
     return null;
