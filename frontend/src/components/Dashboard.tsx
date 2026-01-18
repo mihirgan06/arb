@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useRef } from "react";
-import { Info, Loader2, RefreshCw } from "lucide-react";
+import { Info, Loader2, RefreshCw, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   AreaChart,
@@ -20,47 +20,32 @@ interface Opportunity extends ArbitrageOpportunity {
 export function Dashboard() {
   const [opps, setOpps] = useState<Opportunity[]>([]);
   const [loading, setLoading] = useState(true);
-  const [scanning, setScanning] = useState(false);
-  const [scanStatus, setScanStatus] = useState("");
+  const [findingMore, setFindingMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [selected, setSelected] = useState<Opportunity | null>(null);
   const [showWhy, setShowWhy] = useState(false);
   const [shares, setShares] = useState(100);
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(false);
+  const [totalCount, setTotalCount] = useState(0);
   const hasFetched = useRef(false);
 
-  const fetchOpportunities = async () => {
-    const r = await fetch("/api/arbitrage/opportunities?page=0&limit=15");
+  const fetchOpportunities = async (pageNum = 0) => {
+    const r = await fetch(`/api/arbitrage/opportunities?page=${pageNum}&limit=15`);
     const d = await r.json();
     if (d.success && d.opportunities) {
-      setOpps(d.opportunities);
+      if (pageNum === 0) {
+        setOpps(d.opportunities);
+        if (d.opportunities.length > 0) setSelected(d.opportunities[0]);
+      } else {
+        setOpps(prev => [...prev, ...d.opportunities]);
+      }
       setHasMore(d.hasMore || false);
-      if (d.opportunities.length > 0) setSelected(d.opportunities[0]);
+      setTotalCount(d.totalOpportunities || d.opportunities.length);
+      setPage(pageNum);
       return d.opportunities.length;
     }
     return 0;
-  };
-
-  const runScraper = async () => {
-    setScanning(true);
-    setScanStatus("Scanning markets with AI...");
-    try {
-      const r = await fetch("/api/arbitrage/scraper?maxCalls=50", { method: "POST" });
-      const d = await r.json();
-      if (d.success) {
-        setScanStatus(`Found ${d.newCorrelations} new correlations!`);
-        // Refresh opportunities list
-        await fetchOpportunities();
-      }
-    } catch (e) {
-      setScanStatus("Scan failed - retrying...");
-      console.error(e);
-    }
-    finally { 
-      setScanning(false);
-      setTimeout(() => setScanStatus(""), 3000);
-    }
   };
 
   useEffect(() => {
@@ -69,16 +54,11 @@ export function Dashboard() {
     
     const init = async () => {
       try {
-        // 1. Load from cache immediately
-        await fetchOpportunities();
-        setLoading(false);
-        
-        // 2. ALWAYS start background scraper to find more
-        runScraper();
+        await fetchOpportunities(0);
       } catch (e) { 
         console.error(e); 
-        setLoading(false);
       }
+      finally { setLoading(false); }
     };
     init();
   }, []);
@@ -87,10 +67,7 @@ export function Dashboard() {
     setLoading(true);
     setPage(0);
     try {
-      const count = await fetchOpportunities();
-      if (count === 0 && !scanning) {
-        runScraper();
-      }
+      await fetchOpportunities(0);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   };
@@ -98,16 +75,22 @@ export function Dashboard() {
   const loadMore = async () => {
     setLoadingMore(true);
     try {
-      const nextPage = page + 1;
-      const r = await fetch(`/api/arbitrage/opportunities?page=${nextPage}&limit=15`);
-      const d = await r.json();
-      if (d.success && d.opportunities) {
-        setOpps(prev => [...prev, ...d.opportunities]);
-        setHasMore(d.hasMore || false);
-        setPage(nextPage);
-      }
+      await fetchOpportunities(page + 1);
     } catch (e) { console.error(e); }
     finally { setLoadingMore(false); }
+  };
+
+  const findMoreWithAI = async () => {
+    setFindingMore(true);
+    try {
+      const r = await fetch("/api/arbitrage/scraper", { method: "POST" });
+      const d = await r.json();
+      if (d.success) {
+        // Refresh from page 0 to get new opportunities
+        await fetchOpportunities(0);
+      }
+    } catch (e) { console.error(e); }
+    finally { setFindingMore(false); }
   };
 
   const getProfit = (curve: Opportunity["profitCurve"], targetShares: number) => {
@@ -133,22 +116,6 @@ export function Dashboard() {
           </div>
         </div>
 
-        {/* Scanning Status Bar */}
-        {(scanning || scanStatus) && (
-          <div className="mb-4 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30">
-            <div className="flex items-center gap-3">
-              {scanning && <Loader2 className="w-5 h-5 animate-spin text-emerald-500" />}
-              <span className="text-emerald-400 text-sm">
-                {scanStatus || "Scanning markets with AI..."}
-              </span>
-              {!scanning && scanStatus && (
-                <button onClick={() => runScraper()} className="ml-auto text-xs text-emerald-500 hover:underline">
-                  Scan Again
-                </button>
-              )}
-            </div>
-          </div>
-        )}
 
         {loading ? (
           <div className="flex items-center justify-center h-64">
@@ -156,9 +123,19 @@ export function Dashboard() {
           </div>
         ) : opps.length === 0 ? (
           <div className="text-center py-20">
-            <p className="text-zinc-500 mb-4">
-              {scanning ? "Scanning Polymarket for arbitrage opportunities..." : "No opportunities in cache"}
-            </p>
+            <p className="text-zinc-500 mb-4">No opportunities in cache</p>
+            <button onClick={findMoreWithAI} disabled={findingMore}
+              className="px-6 py-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium disabled:opacity-50">
+              {findingMore ? (
+                <span className="flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Finding opportunities...
+                </span>
+              ) : (
+                <span className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4" /> Find Opportunities with AI
+                </span>
+              )}
+            </button>
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -199,23 +176,42 @@ export function Dashboard() {
                 ))}
               </div>
               
-              {/* Load More Button */}
-              {hasMore && (
+              {/* Load More / Find More Buttons */}
+              <div className="space-y-2 mt-3">
+                {hasMore && (
+                  <button
+                    onClick={loadMore}
+                    disabled={loadingMore}
+                    className="w-full px-4 py-3 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {loadingMore ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Loading more...
+                      </span>
+                    ) : (
+                      `Load More (${opps.length}/${totalCount})`
+                    )}
+                  </button>
+                )}
                 <button
-                  onClick={loadMore}
-                  disabled={loadingMore}
-                  className="w-full mt-3 px-4 py-3 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={findMoreWithAI}
+                  disabled={findingMore}
+                  className="w-full px-4 py-3 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-400 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {loadingMore ? (
+                  {findingMore ? (
                     <span className="flex items-center justify-center gap-2">
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      Loading more...
+                      Finding new opportunities with AI...
                     </span>
                   ) : (
-                    "Load More Opportunities"
+                    <span className="flex items-center justify-center gap-2">
+                      <Sparkles className="w-4 h-4" />
+                      Find More with AI
+                    </span>
                   )}
                 </button>
-              )}
+              </div>
             </div>
 
             {/* RIGHT: Detail */}
