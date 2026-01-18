@@ -1,308 +1,209 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
-import { TrendingUp, RefreshCw, X, Check, AlertTriangle } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import React, { useEffect, useState, useRef } from "react";
+import { Info, Loader2, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { ArbitrageGraph } from "./ArbitrageGraph";
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
+import type { ArbitrageOpportunity } from "@/services/arbitrage-engine";
 
-interface Market {
-  id: string;
-  question: string;
-  slug: string;
-  outcomePrices: string[] | null;
-  volume: number;
-  liquidity: number;
-  clobTokenIds: string[] | null;
-}
-
-interface ArbitrageResult {
-  opportunity: any;
-  market1OrderBook: any;
-  market2OrderBook: any;
+interface Opportunity extends ArbitrageOpportunity {
+  correlation?: { type: string; confidence: number; reasoning: string };
 }
 
 export function Dashboard() {
-  const [markets, setMarkets] = useState<Market[]>([]);
+  const [opps, setOpps] = useState<Opportunity[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedMarkets, setSelectedMarkets] = useState<Market[]>([]);
-  const [comparing, setComparing] = useState(false);
-  const [result, setResult] = useState<ArbitrageResult | null>(null);
-  const [correlationType, setCorrelationType] = useState<"SAME" | "OPPOSITE">("SAME");
-
-  // Fetch markets on load
-  const fetchMarkets = useCallback(async () => {
-    try {
-      setLoading(true);
-      const res = await fetch("/api/markets?limit=30");
-      const data = await res.json();
-      if (data.success && data.markets) {
-        setMarkets(data.markets);
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const [selected, setSelected] = useState<Opportunity | null>(null);
+  const [showWhy, setShowWhy] = useState(false);
+  const [shares, setShares] = useState(100);
+  const hasFetched = useRef(false);
 
   useEffect(() => {
-    fetchMarkets();
-  }, [fetchMarkets]);
-
-  // Toggle market selection
-  const toggleMarket = (market: Market) => {
-    if (selectedMarkets.find(m => m.id === market.id)) {
-      setSelectedMarkets(selectedMarkets.filter(m => m.id !== market.id));
-    } else if (selectedMarkets.length < 2) {
-      setSelectedMarkets([...selectedMarkets, market]);
-    }
-  };
-
-  // Compare 2 selected markets
-  const compareMarkets = async () => {
-    if (selectedMarkets.length !== 2) return;
+    if (hasFetched.current) return;
+    hasFetched.current = true;
     
-    setComparing(true);
-    setResult(null);
-    
+    const fetchData = async () => {
+      try {
+        const r = await fetch("/api/arbitrage/opportunities?page=0&limit=20");
+        const d = await r.json();
+        if (d.success && d.opportunities) {
+          setOpps(d.opportunities);
+          if (d.opportunities.length > 0) setSelected(d.opportunities[0]);
+        }
+      } catch (e) { console.error(e); }
+      finally { setLoading(false); }
+    };
+    fetchData();
+  }, []);
+
+  const refresh = async () => {
+    setLoading(true);
     try {
-      const res = await fetch("/api/arbitrage/compare", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          market1: {
-            id: selectedMarkets[0].id,
-            question: selectedMarkets[0].question,
-            tokenId: selectedMarkets[0].clobTokenIds?.[0],
-          },
-          market2: {
-            id: selectedMarkets[1].id,
-            question: selectedMarkets[1].question,
-            tokenId: selectedMarkets[1].clobTokenIds?.[0],
-          },
-          correlationType,
-        }),
-      });
-      
-      const data = await res.json();
-      if (data.success) {
-        setResult(data);
+      const r = await fetch("/api/arbitrage/opportunities?page=0&limit=20");
+      const d = await r.json();
+      if (d.success && d.opportunities) {
+        setOpps(d.opportunities);
+        if (d.opportunities.length > 0) setSelected(d.opportunities[0]);
       }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setComparing(false);
-    }
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
   };
 
-  const clearSelection = () => {
-    setSelectedMarkets([]);
-    setResult(null);
+  const getProfit = (curve: Opportunity["profitCurve"], targetShares: number) => {
+    if (!curve || curve.length === 0) return null;
+    return curve.reduce((closest, p) =>
+      Math.abs(p.shares - targetShares) < Math.abs(closest.shares - targetShares) ? p : closest
+    );
   };
+
+  const currentProfit = selected ? getProfit(selected.profitCurve, shares) : null;
 
   return (
-    <div className="flex flex-col gap-6 max-w-[1400px] mx-auto p-6">
-      {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Arbitrage Scanner</h1>
-          <p className="text-sm text-zinc-400">Select 2 markets to compare for arbitrage</p>
+    <div className="min-h-screen bg-[#0a0a0a] text-white p-6">
+      <div className="max-w-6xl mx-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-2xl font-bold">Polymarket Arbitrage</h1>
+          <button onClick={refresh} disabled={loading}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm disabled:opacity-50">
+            <RefreshCw className={cn("w-4 h-4", loading && "animate-spin")} /> Refresh
+          </button>
         </div>
-        <Button 
-          onClick={fetchMarkets} 
-          variant="outline" 
-          size="sm"
-          className="border-zinc-700 hover:bg-zinc-800"
-        >
-          <RefreshCw className={cn("h-4 w-4 mr-2", loading && "animate-spin")} />
-          Refresh
-        </Button>
-      </div>
 
-      {/* Selection Bar */}
-      {selectedMarkets.length > 0 && (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex-1 space-y-2">
-              <p className="text-xs text-zinc-500 uppercase tracking-wider">Selected Markets</p>
-              {selectedMarkets.map((m, i) => (
-                <div key={m.id} className="flex items-center gap-2">
-                  <Badge variant="outline" className="text-xs">{i + 1}</Badge>
-                  <span className="text-sm text-white truncate">{m.question}</span>
-                  <Button 
-                    size="icon" 
-                    variant="ghost" 
-                    className="h-5 w-5 text-zinc-500 hover:text-white"
-                    onClick={() => toggleMarket(m)}
-                  >
-                    <X className="h-3 w-3" />
-                  </Button>
-                </div>
-              ))}
-            </div>
-            
-            <div className="flex items-center gap-3">
-              {/* Correlation Type Toggle */}
-              <div className="flex items-center gap-2 bg-zinc-800 rounded-md p-1">
-                <button
-                  onClick={() => setCorrelationType("SAME")}
-                  className={cn(
-                    "px-3 py-1 text-xs rounded transition-all",
-                    correlationType === "SAME" 
-                      ? "bg-orange-500 text-white" 
-                      : "text-zinc-400 hover:text-white"
-                  )}
-                >
-                  Same
-                </button>
-                <button
-                  onClick={() => setCorrelationType("OPPOSITE")}
-                  className={cn(
-                    "px-3 py-1 text-xs rounded transition-all",
-                    correlationType === "OPPOSITE" 
-                      ? "bg-orange-500 text-white" 
-                      : "text-zinc-400 hover:text-white"
-                  )}
-                >
-                  Opposite
-                </button>
-              </div>
-              
-              <Button 
-                onClick={compareMarkets}
-                disabled={selectedMarkets.length !== 2 || comparing}
-                className="bg-orange-500 hover:bg-orange-600"
-              >
-                {comparing ? "Analyzing..." : "Compare"}
-              </Button>
-              
-              <Button 
-                onClick={clearSelection}
-                variant="ghost"
-                className="text-zinc-400 hover:text-white"
-              >
-                Clear
-              </Button>
-            </div>
+        {loading ? (
+          <div className="flex items-center justify-center h-64">
+            <Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
           </div>
-        </div>
-      )}
+        ) : opps.length === 0 ? (
+          <div className="text-center py-20 text-zinc-500">No opportunities found</div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* LEFT: List */}
+            <div className="space-y-3">
+              <p className="text-sm text-zinc-500">{opps.length} opportunities found</p>
+              <div className="space-y-2 max-h-[70vh] overflow-y-auto pr-2">
+                {opps.map((o, i) => (
+                  <div key={i} onClick={() => { setSelected(o); setShowWhy(false); setShares(100); }}
+                    className={cn(
+                      "p-4 rounded-xl cursor-pointer border transition-all",
+                      selected === o ? "bg-emerald-500/10 border-emerald-500/40" : "bg-zinc-900 border-zinc-800 hover:border-zinc-600"
+                    )}>
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="px-2 py-1 rounded bg-emerald-500/20 text-emerald-400 text-sm font-mono font-bold">
+                        +${o.profitAt100Shares.toFixed(2)}
+                      </span>
+                      <span className="text-xs text-zinc-500">/ 100 shares</span>
+                    </div>
+                    <div className="space-y-2 text-sm">
+                      <div>
+                        <span className="text-emerald-400 text-xs">BUY</span>
+                        <p className="text-white">{o.market1Question}</p>
+                        <p className="text-zinc-500 text-xs">@ ${o.buyPrice.toFixed(4)}</p>
+                      </div>
+                      <div className="text-zinc-600 text-center">↓</div>
+                      <div>
+                        <span className="text-red-400 text-xs">SELL</span>
+                        <p className="text-zinc-300">{o.market2Question}</p>
+                        <p className="text-zinc-500 text-xs">@ ${o.sellPrice.toFixed(4)}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
 
-      {/* Result Panel */}
-      {result && (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-6">
-          <div className="flex items-center gap-3 mb-4">
-            {result.opportunity ? (
-              <>
-                <div className="h-10 w-10 rounded-full bg-green-500/20 flex items-center justify-center">
-                  <TrendingUp className="h-5 w-5 text-green-500" />
+            {/* RIGHT: Detail */}
+            {selected && (
+              <div className="space-y-4">
+                {/* Calculator */}
+                <div className="p-5 rounded-xl bg-zinc-900 border border-zinc-800">
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="font-semibold">Profit Calculator</h2>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-zinc-500">Shares:</span>
+                      <input type="number" value={shares}
+                        onChange={e => setShares(Math.max(1, parseInt(e.target.value) || 1))}
+                        className="w-24 px-3 py-1 rounded bg-zinc-800 border border-zinc-700 text-white font-mono" />
+                    </div>
+                  </div>
+
+                  {currentProfit && (
+                    <div className="grid grid-cols-3 gap-3 mb-4">
+                      <div className="p-3 rounded-lg bg-zinc-800">
+                        <div className="text-xs text-zinc-500">Cost</div>
+                        <div className="text-lg font-mono">${currentProfit.totalCost.toFixed(2)}</div>
+                      </div>
+                      <div className="p-3 rounded-lg bg-zinc-800">
+                        <div className="text-xs text-zinc-500">Revenue</div>
+                        <div className="text-lg font-mono">${currentProfit.totalRevenue.toFixed(2)}</div>
+                      </div>
+                      <div className="p-3 rounded-lg bg-emerald-500/10">
+                        <div className="text-xs text-zinc-500">Profit</div>
+                        <div className={cn("text-xl font-mono font-bold", currentProfit.profit > 0 ? "text-emerald-400" : "text-red-400")}>
+                          ${currentProfit.profit.toFixed(2)}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="h-52">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={selected.profitCurve}>
+                        <defs>
+                          <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#10b981" stopOpacity={0.3}/>
+                            <stop offset="100%" stopColor="#10b981" stopOpacity={0}/>
+                          </linearGradient>
+                        </defs>
+                        <XAxis dataKey="shares" stroke="#52525b" fontSize={10} tickFormatter={v=>`${(v/1000).toFixed(0)}k`}/>
+                        <YAxis stroke="#52525b" fontSize={10} tickFormatter={v=>`$${v}`} width={45}/>
+                        <Tooltip contentStyle={{background:"#18181b",border:"1px solid #3f3f46",borderRadius:6,fontSize:12}}
+                          labelFormatter={v=>`${Number(v).toLocaleString()} shares`}
+                          formatter={(v:number)=>[`$${v.toFixed(2)}`,"Profit"]}/>
+                        <Area type="monotone" dataKey="profit" stroke="#10b981" strokeWidth={2} fill="url(#g)"/>
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <p className="text-xs text-zinc-600 mt-2">Max: {selected.maxProfitableShares.toLocaleString()} shares</p>
                 </div>
-                <div>
-                  <h3 className="text-lg font-semibold text-white">Arbitrage Found!</h3>
-                  <p className="text-sm text-zinc-400">
-                    ${result.opportunity.profitAt100Shares?.toFixed(2)} profit per 100 shares
-                  </p>
+
+                {/* Prices */}
+                <div className="p-5 rounded-xl bg-zinc-900 border border-zinc-800">
+                  <div className="flex items-center justify-between mb-3">
+                    <h2 className="font-semibold">Orderbook</h2>
+                    {selected.correlation && (
+                      <button onClick={() => setShowWhy(!showWhy)}
+                        className={cn("p-1.5 rounded", showWhy ? "bg-emerald-500/20 text-emerald-400" : "bg-zinc-800 text-zinc-500")}>
+                        <Info className="w-4 h-4"/>
+                      </button>
+                    )}
+                  </div>
+                  {showWhy && selected.correlation && (
+                    <div className="mb-4 p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/20 text-sm text-zinc-400">
+                      {selected.correlation.reasoning}
+                    </div>
+                  )}
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <p className="text-emerald-400 text-xs mb-1">BUY @ ${selected.buyPrice.toFixed(4)}</p>
+                      <p className="text-zinc-300 line-clamp-2">{selected.market1Question}</p>
+                    </div>
+                    <div>
+                      <p className="text-red-400 text-xs mb-1">SELL @ ${selected.sellPrice.toFixed(4)}</p>
+                      <p className="text-zinc-300 line-clamp-2">{selected.market2Question}</p>
+                    </div>
+                  </div>
                 </div>
-              </>
-            ) : (
-              <>
-                <div className="h-10 w-10 rounded-full bg-zinc-700 flex items-center justify-center">
-                  <AlertTriangle className="h-5 w-5 text-zinc-400" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-semibold text-white">No Arbitrage</h3>
-                  <p className="text-sm text-zinc-400">
-                    Prices don't create a profitable opportunity
-                  </p>
-                </div>
-              </>
+              </div>
             )}
           </div>
-
-          {/* Orderbook Prices */}
-          <div className="grid grid-cols-2 gap-4 mb-4">
-            <div className="bg-zinc-800 rounded-lg p-4">
-              <p className="text-xs text-zinc-500 mb-2">Market 1: {selectedMarkets[0]?.question?.slice(0, 50)}...</p>
-              <div className="grid grid-cols-2 gap-2 text-sm">
-                <div>
-                  <span className="text-zinc-500">Yes Bid:</span>{" "}
-                  <span className="text-green-400 font-mono">${result.market1OrderBook?.yesBestBid?.toFixed(2)}</span>
-                </div>
-                <div>
-                  <span className="text-zinc-500">Yes Ask:</span>{" "}
-                  <span className="text-red-400 font-mono">${result.market1OrderBook?.yesBestAsk?.toFixed(2)}</span>
-                </div>
-              </div>
-            </div>
-            <div className="bg-zinc-800 rounded-lg p-4">
-              <p className="text-xs text-zinc-500 mb-2">Market 2: {selectedMarkets[1]?.question?.slice(0, 50)}...</p>
-              <div className="grid grid-cols-2 gap-2 text-sm">
-                <div>
-                  <span className="text-zinc-500">Yes Bid:</span>{" "}
-                  <span className="text-green-400 font-mono">${result.market2OrderBook?.yesBestBid?.toFixed(2)}</span>
-                </div>
-                <div>
-                  <span className="text-zinc-500">Yes Ask:</span>{" "}
-                  <span className="text-red-400 font-mono">${result.market2OrderBook?.yesBestAsk?.toFixed(2)}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Profit Graph */}
-          {result.opportunity && (
-            <ArbitrageGraph opportunity={result.opportunity} />
-          )}
-        </div>
-      )}
-
-      {/* Markets Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-        {loading ? (
-          [...Array(6)].map((_, i) => (
-            <div key={i} className="h-24 bg-zinc-800 rounded-lg animate-pulse" />
-          ))
-        ) : (
-          markets.map(market => {
-            const isSelected = selectedMarkets.some(m => m.id === market.id);
-            const yesPrice = market.outcomePrices?.[0] ? parseFloat(market.outcomePrices[0]) : null;
-            
-            return (
-              <div
-                key={market.id}
-                onClick={() => toggleMarket(market)}
-                className={cn(
-                  "relative p-4 rounded-lg border cursor-pointer transition-all",
-                  isSelected
-                    ? "bg-orange-500/10 border-orange-500/50"
-                    : "bg-zinc-900 border-zinc-800 hover:border-zinc-700"
-                )}
-              >
-                {isSelected && (
-                  <div className="absolute top-2 right-2">
-                    <Check className="h-4 w-4 text-orange-500" />
-                  </div>
-                )}
-                
-                <h3 className="text-sm font-medium text-white line-clamp-2 mb-2 pr-6">
-                  {market.question}
-                </h3>
-                
-                <div className="flex items-center justify-between text-xs">
-                  {yesPrice !== null && (
-                    <span className="text-zinc-400">
-                      Yes: <span className="text-white font-mono">{(yesPrice * 100).toFixed(0)}¢</span>
-                    </span>
-                  )}
-                  <span className="text-zinc-500">
-                    Vol: ${(market.volume / 1000000).toFixed(1)}M
-                  </span>
-                </div>
-              </div>
-            );
-          })
         )}
       </div>
     </div>
