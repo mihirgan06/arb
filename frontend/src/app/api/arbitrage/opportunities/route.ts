@@ -21,6 +21,7 @@ export async function GET(request: Request) {
         .from('correlated_pairs')
         .select('*')
         .eq('has_liquidity', true)
+        .neq('correlation_type', 'NONE')
         .gt('profit_at_100_shares', 0)
         .order('profit_at_100_shares', { ascending: false })
         .range(page * limit, (page + 1) * limit - 1);
@@ -74,6 +75,7 @@ export async function GET(request: Request) {
           .from('correlated_pairs')
           .select('*', { count: 'exact', head: true })
           .eq('has_liquidity', true)
+          .neq('correlation_type', 'NONE')
           .gt('profit_at_100_shares', 0);
 
         return NextResponse.json({
