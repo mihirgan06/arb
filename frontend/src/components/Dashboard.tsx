@@ -1,198 +1,256 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { Header } from "./Header";
-import { StatsOverview } from "./StatsOverview";
-import { DiscrepancyAlert } from "./DiscrepancyAlert";
-import { MarketCard } from "./MarketCard";
-import type { DashboardEvent, DiscrepancyResult } from "@/lib/types";
+import React, { useEffect, useState } from "react";
+import { ArrowUpRight, TrendingUp, AlertCircle, RefreshCw, Zap, Search, Filter } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn } from "@/lib/utils";
 
-interface DashboardData {
-  events: DashboardEvent[];
-  discrepancies: DiscrepancyResult[];
-  stats: {
-    totalMarkets: number;
-    activeDiscrepancies: number;
-    avgSpread: number;
-  };
-}
+// Mock data types
+type Market = {
+  id: string;
+  question: string;
+  volume: string;
+  spread: number;
+  polymarketPrice: number;
+  kalshiPrice: number;
+  category: "Politics" | "Crypto" | "Tech";
+};
 
 export function Dashboard() {
-  const [data, setData] = useState<DashboardData | null>(null);
+  const [markets, setMarkets] = useState<Market[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<string>("all");
-
-  const fetchData = useCallback(async () => {
-    try {
-      const response = await fetch("/api/markets");
-      const result = await response.json();
-      
-      if (result.success) {
-        setData(result.data);
-        setError(null);
-      } else {
-        setError(result.error || "Failed to fetch data");
-      }
-    } catch (err) {
-      setError("Network error. Please try again.");
-      console.error("Fetch error:", err);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
 
   useEffect(() => {
-    fetchData();
-    
-    // Poll every 30 seconds for updates
-    const interval = setInterval(fetchData, 30000);
-    return () => clearInterval(interval);
-  }, [fetchData]);
+    // Simulate API fetch
+    const fetchMarkets = async () => {
+      try {
+        await new Promise(r => setTimeout(r, 600)); // Simulate loading
+        setMarkets([
+          {
+            id: "1",
+            question: "Donald Trump to win 2024 Election",
+            volume: "$52.4M",
+            spread: 4.2,
+            polymarketPrice: 0.55,
+            kalshiPrice: 0.51,
+            category: "Politics",
+          },
+          {
+            id: "2",
+            question: "Bitcoin > $100k by Q1 2025",
+            volume: "$12.1M",
+            spread: 2.8,
+            polymarketPrice: 0.32,
+            kalshiPrice: 0.35,
+            category: "Crypto",
+          },
+          {
+            id: "3",
+            question: "GPT-5 Released before July 2025",
+            volume: "$8.5M",
+            spread: 1.5,
+            polymarketPrice: 0.60,
+            kalshiPrice: 0.59,
+            category: "Tech",
+          },
+        ]);
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-  const filteredEvents = data?.events.filter((event) => {
-    if (filter === "all") return true;
-    if (filter === "discrepancies") return event.discrepancy && event.discrepancy.spread > 0.03;
-    return event.category.toLowerCase() === filter.toLowerCase();
-  }) || [];
-
-  const categories = data 
-    ? Array.from(new Set(data.events.map((e) => e.category)))
-    : [];
-
-  if (loading) {
-    return <LoadingState />;
-  }
-
-  if (error) {
-    return <ErrorState error={error} onRetry={fetchData} />;
-  }
-
-  if (!data) {
-    return <EmptyState />;
-  }
+    fetchMarkets();
+  }, []);
 
   return (
-    <div className="min-h-screen bg-surface">
-      <Header stats={data.stats} />
-      
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <StatsOverview stats={data.stats} />
-        
-        <DiscrepancyAlert discrepancies={data.discrepancies} />
-
-        {/* Filter Bar */}
-        <div className="flex items-center gap-2 mb-6 overflow-x-auto pb-2">
-          <FilterButton 
-            active={filter === "all"} 
-            onClick={() => setFilter("all")}
-          >
-            All Markets
-          </FilterButton>
-          <FilterButton 
-            active={filter === "discrepancies"} 
-            onClick={() => setFilter("discrepancies")}
-            highlight
-          >
-            Discrepancies Only
-          </FilterButton>
-          {categories.map((category) => (
-            <FilterButton
-              key={category}
-              active={filter === category.toLowerCase()}
-              onClick={() => setFilter(category.toLowerCase())}
-            >
-              {category}
-            </FilterButton>
-          ))}
+    <div className="flex flex-col gap-8 animate-fade-in max-w-[1600px] mx-auto">
+      {/* Header Section */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 pt-2">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-semibold tracking-tight text-white">Market Overview</h1>
+          <p className="text-sm text-muted-foreground">Real-time arbitrage opportunities across prediction markets.</p>
         </div>
-
-        {/* Market Grid */}
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {filteredEvents.map((event, index) => (
-            <MarketCard key={event.id} event={event} index={index} />
-          ))}
-        </div>
-
-        {filteredEvents.length === 0 && (
-          <div className="text-center py-12">
-            <p className="text-zinc-500">No markets match the current filter.</p>
+        <div className="flex items-center gap-3 w-full md:w-auto">
+          <div className="relative flex-1 md:w-64">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search markets..."
+              className="pl-9 bg-white/5 border-white/5 focus:bg-white/10 transition-all h-9 text-sm"
+            />
           </div>
-        )}
-      </main>
-    </div>
-  );
-}
-
-function FilterButton({
-  children,
-  active,
-  onClick,
-  highlight = false,
-}: {
-  children: React.ReactNode;
-  active: boolean;
-  onClick: () => void;
-  highlight?: boolean;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`px-3 py-1.5 text-xs font-medium rounded-lg whitespace-nowrap transition-colors ${
-        active
-          ? highlight
-            ? "bg-accent text-surface"
-            : "bg-zinc-800 text-zinc-100"
-          : highlight
-            ? "bg-accent/10 text-accent hover:bg-accent/20"
-            : "bg-surface-elevated text-zinc-400 hover:text-zinc-200 border border-surface-border"
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
-
-function LoadingState() {
-  return (
-    <div className="min-h-screen bg-surface flex items-center justify-center">
-      <div className="text-center">
-        <div className="w-12 h-12 border-2 border-accent border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-        <p className="text-zinc-400 text-sm">Loading market data...</p>
-      </div>
-    </div>
-  );
-}
-
-function ErrorState({ error, onRetry }: { error: string; onRetry: () => void }) {
-  return (
-    <div className="min-h-screen bg-surface flex items-center justify-center">
-      <div className="text-center max-w-md">
-        <div className="w-12 h-12 bg-negative/10 rounded-full flex items-center justify-center mx-auto mb-4">
-          <svg className="w-6 h-6 text-negative" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-          </svg>
+          <Button size="sm" className="bg-primary hover:bg-primary/90 text-primary-foreground font-medium shadow-[0_0_15px_-3px_rgba(249,115,22,0.4)] transition-all">
+            <Zap className="h-3.5 w-3.5 mr-2" />
+            Live Scan
+          </Button>
         </div>
-        <h2 className="text-lg font-semibold text-zinc-100 mb-2">Failed to load data</h2>
-        <p className="text-sm text-zinc-400 mb-4">{error}</p>
-        <button
-          onClick={onRetry}
-          className="px-4 py-2 bg-accent text-surface text-sm font-medium rounded-lg hover:bg-accent-muted transition-colors"
-        >
-          Try Again
-        </button>
+      </div>
+
+      {/* Metrics Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <MetricCard
+          label="Arbitrage Volume (24h)"
+          value="$2,405,910"
+          trend="+12.5%"
+          trendUp={true}
+        />
+        <MetricCard
+          label="Active Opportunities"
+          value="14"
+          trend="High Activity"
+          trendUp={true}
+          highlight
+        />
+        <MetricCard
+          label="Avg. Spread Capture"
+          value="3.2%"
+          trend="-0.4%"
+          trendUp={false}
+        />
+      </div>
+
+      {/* Main Content Split */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+        {/* Main Feed */}
+        <div className="lg:col-span-2 space-y-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-medium text-white">Top Opportunities</h2>
+            <Tabs defaultValue="all" className="w-auto">
+              <TabsList className="bg-white/5 border border-white/5 h-8 p-0.5">
+                <TabsTrigger value="all" className="text-xs px-3 h-7 data-[state=active]:bg-white/10 data-[state=active]:text-white">All</TabsTrigger>
+                <TabsTrigger value="politics" className="text-xs px-3 h-7 data-[state=active]:bg-white/10 data-[state=active]:text-white">Politics</TabsTrigger>
+                <TabsTrigger value="crypto" className="text-xs px-3 h-7 data-[state=active]:bg-white/10 data-[state=active]:text-white">Crypto</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </div>
+
+          <div className="grid gap-3">
+            {loading ? (
+              [1, 2, 3].map(i => <div key={i} className="h-24 bg-white/5 rounded-xl animate-pulse" />)
+            ) : (
+              markets.map((market) => (
+                <ArbitrageCard key={market.id} market={market} />
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Side Panel: Live Ticker */}
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-medium text-white flex items-center gap-2">
+              <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+              Live Activity
+            </h2>
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-white">
+              <Filter className="h-4 w-4" />
+            </Button>
+          </div>
+
+          <div className="bg-white/[0.02] border border-white/5 rounded-xl overflow-hidden backdrop-blur-sm">
+            <div className="p-4 border-b border-white/5">
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Recent Signals</span>
+            </div>
+            <ScrollArea className="h-[400px]">
+              <div className="divide-y divide-white/5">
+                {[1, 2, 3, 4, 5, 6].map((item) => (
+                  <div key={item} className="p-4 hover:bg-white/[0.02] transition-colors cursor-default">
+                    <div className="flex justify-between items-start mb-1">
+                      <Badge variant="outline" className="text-[10px] border-primary/20 text-primary bg-primary/5 px-1.5 py-0 h-5">
+                        SPREAD WIDENED
+                      </Badge>
+                      <span className="text-[10px] text-muted-foreground font-mono">10:42 PM</span>
+                    </div>
+                    <p className="text-sm text-foreground/90 leading-snug">
+                      Spread on <span className="text-white font-medium">Trump 2024</span> increased to <span className="text-green-500 font-bold">4.5%</span> due to Kalshi price drop.
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </ScrollArea>
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-function EmptyState() {
+// Minimal Widget Components
+
+function MetricCard({ label, value, trend, trendUp, highlight }: any) {
   return (
-    <div className="min-h-screen bg-surface flex items-center justify-center">
-      <div className="text-center">
-        <p className="text-zinc-400">No market data available.</p>
+    <div className={cn(
+      "p-5 rounded-xl border transition-all duration-300 group hover:bg-white/[0.02]",
+      highlight ? "bg-white/[0.03] border-white/10" : "bg-transparent border-white/5"
+    )}>
+      <div className="flex flex-col gap-1">
+        <span className="text-xs font-medium text-muted-foreground tracking-wide uppercase">{label}</span>
+        <div className="flex items-baseline gap-2">
+          <span className="text-2xl font-bold text-white font-geist tracking-tight">{value}</span>
+          {trend && (
+            <span className={cn(
+              "text-xs font-medium flex items-center bg-opacity-10 px-1.5 py-0.5 rounded",
+              trendUp ? "text-green-400 bg-green-500/10" : "text-red-400 bg-red-500/10"
+            )}>
+              {trendUp ? <TrendingUp className="h-3 w-3 mr-1" /> : <AlertCircle className="h-3 w-3 mr-1" />}
+              {trend}
+            </span>
+          )}
+        </div>
       </div>
     </div>
-  );
+  )
 }
 
+function ArbitrageCard({ market }: { market: Market }) {
+  return (
+    <div className="group relative overflow-hidden p-5 rounded-xl border border-white/5 bg-white/[0.02] hover:bg-white/[0.04] hover:border-white/10 transition-all duration-300">
+
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex gap-4">
+          {/* Confidence/Spread score bubble */}
+          <div className="h-12 w-12 shrink-0 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/10 flex flex-col items-center justify-center text-primary">
+            <span className="text-sm font-bold leading-none">{market.spread.toFixed(1)}%</span>
+            <span className="text-[9px] opacity-80 font-medium">ARB</span>
+          </div>
+
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <h3 className="text-base font-medium text-white group-hover:text-primary transition-colors cursor-pointer">
+                {market.question}
+              </h3>
+              <Badge variant="secondary" className="bg-white/5 text-muted-foreground hover:bg-white/10 border-0 h-5 text-[10px]">
+                {market.category}
+              </Badge>
+            </div>
+            <p className="text-xs text-muted-foreground font-mono">
+              Vol: <span className="text-foreground/70">{market.volume}</span> • Updated 2s ago
+            </p>
+          </div>
+        </div>
+
+        {/* Price Actions */}
+        <div className="flex items-center gap-6 pl-4 border-l border-white/5 sm:pl-0 sm:border-0">
+          <div className="grid grid-cols-2 gap-x-8 gap-y-1 text-right">
+            <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-medium">Polymarket</span>
+            <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-medium">Kalshi</span>
+
+            <span className="text-sm font-bold text-white font-mono">{Math.round(market.polymarketPrice * 100)}¢</span>
+            <span className="text-sm font-bold text-white font-mono">{Math.round(market.kalshiPrice * 100)}¢</span>
+          </div>
+
+          <Button variant="outline" size="icon" className="h-9 w-9 rounded-full border-white/10 bg-transparent text-muted-foreground hover:text-white hover:bg-white/5 hover:border-white/20">
+            <ArrowUpRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
