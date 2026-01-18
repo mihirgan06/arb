@@ -34,6 +34,12 @@ export interface ArbitrageOpportunity {
   market2Id: string;
   market2Question: string;
   
+  // Polymarket display prices (what users see on the website)
+  market1YesDisplayPrice?: number;
+  market1NoDisplayPrice?: number;
+  market2YesDisplayPrice?: number;
+  market2NoDisplayPrice?: number;
+  
   // Real orderbook data
   market1YesRange: PriceRange;
   market1NoRange: PriceRange;

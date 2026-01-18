@@ -20,9 +20,12 @@ interface Opportunity extends ArbitrageOpportunity {
 export function Dashboard() {
   const [opps, setOpps] = useState<Opportunity[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [selected, setSelected] = useState<Opportunity | null>(null);
   const [showWhy, setShowWhy] = useState(false);
   const [shares, setShares] = useState(100);
+  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
   const hasFetched = useRef(false);
 
   useEffect(() => {
@@ -31,10 +34,11 @@ export function Dashboard() {
     
     const fetchData = async () => {
       try {
-        const r = await fetch("/api/arbitrage/opportunities?page=0&limit=20");
+        const r = await fetch("/api/arbitrage/opportunities?page=0&limit=15");
         const d = await r.json();
         if (d.success && d.opportunities) {
           setOpps(d.opportunities);
+          setHasMore(d.hasMore || false);
           if (d.opportunities.length > 0) setSelected(d.opportunities[0]);
         }
       } catch (e) { console.error(e); }
@@ -45,15 +49,32 @@ export function Dashboard() {
 
   const refresh = async () => {
     setLoading(true);
+    setPage(0);
     try {
-      const r = await fetch("/api/arbitrage/opportunities?page=0&limit=20");
+      const r = await fetch("/api/arbitrage/opportunities?page=0&limit=15");
       const d = await r.json();
       if (d.success && d.opportunities) {
         setOpps(d.opportunities);
+        setHasMore(d.hasMore || false);
         if (d.opportunities.length > 0) setSelected(d.opportunities[0]);
       }
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
+  };
+
+  const loadMore = async () => {
+    setLoadingMore(true);
+    try {
+      const nextPage = page + 1;
+      const r = await fetch(`/api/arbitrage/opportunities?page=${nextPage}&limit=15`);
+      const d = await r.json();
+      if (d.success && d.opportunities) {
+        setOpps(prev => [...prev, ...d.opportunities]);
+        setHasMore(d.hasMore || false);
+        setPage(nextPage);
+      }
+    } catch (e) { console.error(e); }
+    finally { setLoadingMore(false); }
   };
 
   const getProfit = (curve: Opportunity["profitCurve"], targetShares: number) => {
@@ -102,8 +123,8 @@ export function Dashboard() {
                         </div>
                         <p className="text-white mb-1">{o.market1Question}</p>
                         <div className="flex gap-3 text-xs">
-                          <span className="text-zinc-500">YES: ${o.market1YesRange.bestAsk.toFixed(4)}</span>
-                          <span className="text-zinc-500">NO: ${o.market1NoRange.bestAsk.toFixed(4)}</span>
+                          <span className="text-zinc-500">YES: ${(o.market1YesDisplayPrice ?? o.market1YesRange.midpoint).toFixed(4)}</span>
+                          <span className="text-zinc-500">NO: ${(o.market1NoDisplayPrice ?? o.market1NoRange.midpoint).toFixed(4)}</span>
                         </div>
                       </div>
                       <div className="text-zinc-600 text-center">↓</div>
@@ -113,14 +134,32 @@ export function Dashboard() {
                         </div>
                         <p className="text-zinc-300 mb-1">{o.market2Question}</p>
                         <div className="flex gap-3 text-xs">
-                          <span className="text-zinc-500">YES: ${o.market2YesRange.bestBid.toFixed(4)}</span>
-                          <span className="text-zinc-500">NO: ${o.market2NoRange.bestBid.toFixed(4)}</span>
+                          <span className="text-zinc-500">YES: ${(o.market2YesDisplayPrice ?? o.market2YesRange.midpoint).toFixed(4)}</span>
+                          <span className="text-zinc-500">NO: ${(o.market2NoDisplayPrice ?? o.market2NoRange.midpoint).toFixed(4)}</span>
                         </div>
                       </div>
                     </div>
                   </div>
                 ))}
               </div>
+              
+              {/* Load More Button */}
+              {hasMore && (
+                <button
+                  onClick={loadMore}
+                  disabled={loadingMore}
+                  className="w-full mt-3 px-4 py-3 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loadingMore ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Loading more...
+                    </span>
+                  ) : (
+                    "Load More Opportunities"
+                  )}
+                </button>
+              )}
             </div>
 
             {/* RIGHT: Detail */}

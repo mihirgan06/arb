@@ -3,20 +3,34 @@ import { arbitrageEngine } from "@/services/arbitrage-engine";
 import { polymarket } from "@/services/polymarket-client";
 import type { MarketOrderBook } from "@/lib/orderbook";
 import { extractTokenIds, normalizeOrderBook } from "@/lib/polymarket-helpers";
+import OpenAI from "openai";
 
 export const dynamic = "force-dynamic";
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const limit = parseInt(searchParams.get("limit") || "5");
+    const page = parseInt(searchParams.get("page") || "0");
+    const limit = parseInt(searchParams.get("limit") || "15");
 
-    const events = await polymarket.getTopMarkets(20);
+    // Fetch more markets to have enough candidates for LLM pairing
+    const events = await polymarket.getTopMarkets(50);
     if (!events || events.length < 1) {
       return NextResponse.json({ success: true, opportunities: [], totalMarkets: 0 });
     }
 
-    interface MarketInfo { id: string; question: string; tokenYes: string; eventTitle: string; }
+    interface MarketInfo { 
+      id: string; 
+      question: string; 
+      tokenYes: string; 
+      eventTitle: string;
+      yesDisplayPrice: number;
+      noDisplayPrice: number;
+    }
     const markets: MarketInfo[] = [];
 
     // Max 3 markets per event to get diversity
@@ -27,11 +41,23 @@ export async function GET(request: Request) {
         if (countForEvent >= 3) break; // Only 3 per event
         const tokenIds = extractTokenIds(market);
         if (tokenIds.yes) {
+          // Parse outcomePrices from Gamma API (what Polymarket displays)
+          let outcomePrices = market.outcomePrices;
+          if (typeof outcomePrices === 'string') {
+            outcomePrices = JSON.parse(outcomePrices);
+          }
+          const yesDisplayPrice = parseFloat(outcomePrices?.[0] || "0.5");
+          const noDisplayPrice = parseFloat(outcomePrices?.[1] || "0.5");
+          
+          console.log(`[Price Debug] ${market.question}: YES=${yesDisplayPrice}, NO=${noDisplayPrice}, SUM=${(yesDisplayPrice + noDisplayPrice).toFixed(4)}`);
+          
           markets.push({
             id: market.id || market.slug,
             question: market.question || event.title,
             tokenYes: tokenIds.yes,
             eventTitle: event.title || "",
+            yesDisplayPrice,
+            noDisplayPrice,
           });
           countForEvent++;
         }
@@ -40,22 +66,49 @@ export async function GET(request: Request) {
 
     console.log(`[API] ${markets.length} markets from ${events.length} events`);
 
+    // Pre-filter: Group markets by topic keywords for smarter pairing
+    const getKeywords = (q: string) => {
+      const words = q.toLowerCase().match(/\b\w{4,}\b/g) || [];
+      return new Set(words.filter(w => !['will', 'the', 'win', 'by', 'for', 'and', 'or'].includes(w)));
+    };
+
     const opportunities: any[] = [];
     const checked = new Set<string>();
+    let llmCallCount = 0;
+    let pairsChecked = 0;
+    const MAX_LLM_CALLS = 40; // Limit LLM calls to save time and money (reduced for speed)
+
+    console.log(`[API] Starting LLM correlation detection with smart pairing...`);
 
     for (const market of markets) {
-      if (opportunities.length >= limit) break;
+      if (opportunities.length >= limit * 2) break;
+      if (llmCallCount >= MAX_LLM_CALLS) break;
+
+      const marketKeywords = getKeywords(market.question);
 
       for (const other of markets) {
+        if (opportunities.length >= limit * 2) break;
+        if (llmCallCount >= MAX_LLM_CALLS) break;
         if (market.id === other.id) continue;
         const key = [market.id, other.id].sort().join("-");
         if (checked.has(key)) continue;
         checked.add(key);
         
-        const result = detectCorrelation(market.question.toLowerCase(), other.question.toLowerCase(), market.eventTitle, other.eventTitle);
-        if (!result) continue;
+        // Pre-filter: Only check pairs with at least 2 shared keywords
+        const otherKeywords = getKeywords(other.question);
+        const sharedKeywords = [...marketKeywords].filter(k => otherKeywords.has(k));
+        if (sharedKeywords.length < 2) continue;
+        
+        pairsChecked++;
+        llmCallCount++;
+        console.log(`[API] LLM Call ${llmCallCount}/${MAX_LLM_CALLS}: Pair ${pairsChecked} (shared: ${sharedKeywords.join(', ')})`);
+        const result = await detectCorrelationWithLLM(market.question, other.question);
+        if (!result) {
+          console.log(`[API] ❌ No correlation`);
+          continue;
+        }
 
-        console.log(`[API] Correlation: ${result.reasoning}`);
+        console.log(`[API] ✅ FOUND: ${result.reasoning}`);
 
         try {
           const [ob1, ob2] = await Promise.all([
@@ -71,7 +124,14 @@ export async function GET(request: Request) {
 
           const opp = arbitrageEngine.calculateArbitrage(orderbook1, orderbook2, result.correlationType);
           if (opp && opp.profitAt100Shares > 0) {
-            opportunities.push({ ...opp, correlation: { type: result.correlationType, confidence: 0.8, reasoning: result.reasoning } });
+            opportunities.push({ 
+              ...opp, 
+              market1YesDisplayPrice: market.yesDisplayPrice,
+              market1NoDisplayPrice: market.noDisplayPrice,
+              market2YesDisplayPrice: other.yesDisplayPrice,
+              market2NoDisplayPrice: other.noDisplayPrice,
+              correlation: { type: result.correlationType, confidence: 0.8, reasoning: result.reasoning } 
+            });
             break;
           }
         } catch { continue; }
@@ -79,42 +139,63 @@ export async function GET(request: Request) {
     }
 
     opportunities.sort((a, b) => b.profitAt100Shares - a.profitAt100Shares);
-    return NextResponse.json({ success: true, opportunities: opportunities.slice(0, limit), totalMarkets: markets.length });
+    const startIdx = page * limit;
+    const endIdx = startIdx + limit;
+    const paginatedOpps = opportunities.slice(startIdx, endIdx);
+    
+    return NextResponse.json({ 
+      success: true, 
+      opportunities: paginatedOpps, 
+      totalMarkets: markets.length,
+      totalOpportunities: opportunities.length,
+      hasMore: endIdx < opportunities.length,
+      page,
+    });
   } catch (error) {
     console.error("[API] Error:", error);
     return NextResponse.json({ success: false, error: String(error) }, { status: 500 });
   }
 }
 
-function detectCorrelation(q1: string, q2: string, event1: string, event2: string): { correlationType: "SAME" | "OPPOSITE"; reasoning: string } | null {
-  // Skip same-event win questions (mutually exclusive)
-  if (/will .+ win/i.test(q1) && /will .+ win/i.test(q2) && event1 === event2) return null;
+async function detectCorrelationWithLLM(q1: string, q2: string): Promise<{ correlationType: "SAME" | "OPPOSITE"; reasoning: string } | null> {
+  try {
+    const prompt = `Analyze if these prediction markets are correlated for arbitrage:
 
-  // Fed rate correlations
-  if (/fed|bps|interest rate/i.test(q1) && /fed|bps|interest rate/i.test(q2)) {
-    const dec1 = /decrease/i.test(q1), dec2 = /decrease/i.test(q2);
-    const nc1 = /no change/i.test(q1), nc2 = /no change/i.test(q2);
-    if ((dec1 && nc2) || (nc1 && dec2)) return { correlationType: "OPPOSITE", reasoning: "Fed: decrease vs no-change" };
-    if (dec1 && dec2 && q1 !== q2) return { correlationType: "SAME", reasoning: "Fed: related decreases" };
+Market 1: "${q1}"
+Market 2: "${q2}"
+
+VALID correlations:
+- Direct causal link (e.g., "Trump wins" → "Vance becomes VP")
+- Same event, different thresholds (e.g., "BTC > $100k" + "BTC > $95k")
+- Same event, different dates (e.g., "Ceasefire by Jan 31" + "Ceasefire by Mar 31")
+
+INVALID:
+- Mutually exclusive (competing nominations/winners)
+- Independent events (nomination ≠ election win)
+
+Return JSON:
+{"correlated": true/false, "type": "SAME"|"OPPOSITE", "reasoning": "brief explanation"}`;
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.3,
+      response_format: { type: "json_object" },
+    });
+
+    const result = JSON.parse(response.choices[0].message.content || "{}");
+    console.log(`[LLM] "${q1.substring(0, 40)}..." vs "${q2.substring(0, 40)}..." => ${result.correlated ? 'CORRELATED' : 'NOT CORRELATED'}`);
+    
+    if (result.correlated && result.type && result.reasoning) {
+      return {
+        correlationType: result.type,
+        reasoning: result.reasoning,
+      };
+    }
+    
+    return null;
+  } catch (error) {
+    console.error("[LLM] Correlation detection error:", error);
+    return null;
   }
-
-  // Same topic, different dates
-  const dp = /by (january|february|march|april|may|june|july|august|september|october|november|december) (\d+)/i;
-  if (dp.test(q1) && dp.test(q2)) {
-    const t1 = q1.replace(dp, "").replace(/\d{4}\??/, "").trim();
-    const t2 = q2.replace(dp, "").replace(/\d{4}\??/, "").trim();
-    if (similarity(t1, t2) > 0.5) return { correlationType: "SAME", reasoning: "Same topic, different dates" };
-  }
-
-  // Similar questions
-  if (similarity(q1, q2) > 0.5) return { correlationType: "SAME", reasoning: "Similar questions" };
-  return null;
-}
-
-function similarity(a: string, b: string): number {
-  const w1 = new Set(a.match(/\w{3,}/g) || []);
-  const w2 = new Set(b.match(/\w{3,}/g) || []);
-  const inter = [...w1].filter(w => w2.has(w)).length;
-  const union = new Set([...w1, ...w2]).size;
-  return union > 0 ? inter / union : 0;
 }
