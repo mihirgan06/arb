@@ -3,13 +3,19 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Polymarket Arbitrage",
-  description: "Find arbitrage opportunities",
+  description: "Find arbitrage opportunities across prediction markets",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="en">
-      <body className="bg-[#0a0a0a] text-white antialiased">{children}</body>
+      <body className="antialiased bg-[#0a0a0a] text-white">
+        {children}
+      </body>
     </html>
   );
 }

@@ -20,9 +20,12 @@ interface Opportunity extends ArbitrageOpportunity {
 export function Dashboard() {
   const [opps, setOpps] = useState<Opportunity[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [selected, setSelected] = useState<Opportunity | null>(null);
   const [showWhy, setShowWhy] = useState(false);
   const [shares, setShares] = useState(100);
+  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
   const hasFetched = useRef(false);
 
   useEffect(() => {
@@ -31,10 +34,11 @@ export function Dashboard() {
     
     const fetchData = async () => {
       try {
-        const r = await fetch("/api/arbitrage/opportunities?page=0&limit=20");
+        const r = await fetch("/api/arbitrage/opportunities?page=0&limit=15");
         const d = await r.json();
         if (d.success && d.opportunities) {
           setOpps(d.opportunities);
+          setHasMore(d.hasMore || false);
           if (d.opportunities.length > 0) setSelected(d.opportunities[0]);
         }
       } catch (e) { console.error(e); }
@@ -45,15 +49,32 @@ export function Dashboard() {
 
   const refresh = async () => {
     setLoading(true);
+    setPage(0);
     try {
-      const r = await fetch("/api/arbitrage/opportunities?page=0&limit=20");
+      const r = await fetch("/api/arbitrage/opportunities?page=0&limit=15");
       const d = await r.json();
       if (d.success && d.opportunities) {
         setOpps(d.opportunities);
+        setHasMore(d.hasMore || false);
         if (d.opportunities.length > 0) setSelected(d.opportunities[0]);
       }
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
+  };
+
+  const loadMore = async () => {
+    setLoadingMore(true);
+    try {
+      const nextPage = page + 1;
+      const r = await fetch(`/api/arbitrage/opportunities?page=${nextPage}&limit=15`);
+      const d = await r.json();
+      if (d.success && d.opportunities) {
+        setOpps(prev => [...prev, ...d.opportunities]);
+        setHasMore(d.hasMore || false);
+        setPage(nextPage);
+      }
+    } catch (e) { console.error(e); }
+    finally { setLoadingMore(false); }
   };
 
   const getProfit = (curve: Opportunity["profitCurve"], targetShares: number) => {
@@ -95,28 +116,50 @@ export function Dashboard() {
                       "p-4 rounded-xl cursor-pointer border transition-all",
                       selected === o ? "bg-emerald-500/10 border-emerald-500/40" : "bg-zinc-900 border-zinc-800 hover:border-zinc-600"
                     )}>
-                    <div className="flex items-center gap-2 mb-3">
-                      <span className="px-2 py-1 rounded bg-emerald-500/20 text-emerald-400 text-sm font-mono font-bold">
-                        +${o.profitAt100Shares.toFixed(2)}
-                      </span>
-                      <span className="text-xs text-zinc-500">/ 100 shares</span>
-                    </div>
-                    <div className="space-y-2 text-sm">
+                    <div className="space-y-3 text-sm">
                       <div>
-                        <span className="text-emerald-400 text-xs">BUY</span>
-                        <p className="text-white">{o.market1Question}</p>
-                        <p className="text-zinc-500 text-xs">@ ${o.buyPrice.toFixed(4)}</p>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-emerald-400 text-xs font-semibold">BUY {o.executionStrategy.buyOutcome}</span>
+                        </div>
+                        <p className="text-white mb-1">{o.market1Question}</p>
+                        <div className="flex gap-3 text-xs">
+                          <span className="text-zinc-500">YES: ${(o.market1YesDisplayPrice ?? o.market1YesRange.midpoint).toFixed(4)}</span>
+                          <span className="text-zinc-500">NO: ${(o.market1NoDisplayPrice ?? o.market1NoRange.midpoint).toFixed(4)}</span>
+                        </div>
                       </div>
                       <div className="text-zinc-600 text-center">↓</div>
                       <div>
-                        <span className="text-red-400 text-xs">SELL</span>
-                        <p className="text-zinc-300">{o.market2Question}</p>
-                        <p className="text-zinc-500 text-xs">@ ${o.sellPrice.toFixed(4)}</p>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-red-400 text-xs font-semibold">SELL {o.executionStrategy.sellOutcome}</span>
+                        </div>
+                        <p className="text-zinc-300 mb-1">{o.market2Question}</p>
+                        <div className="flex gap-3 text-xs">
+                          <span className="text-zinc-500">YES: ${(o.market2YesDisplayPrice ?? o.market2YesRange.midpoint).toFixed(4)}</span>
+                          <span className="text-zinc-500">NO: ${(o.market2NoDisplayPrice ?? o.market2NoRange.midpoint).toFixed(4)}</span>
+                        </div>
                       </div>
                     </div>
                   </div>
                 ))}
               </div>
+              
+              {/* Load More Button */}
+              {hasMore && (
+                <button
+                  onClick={loadMore}
+                  disabled={loadingMore}
+                  className="w-full mt-3 px-4 py-3 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loadingMore ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Loading more...
+                    </span>
+                  ) : (
+                    "Load More Opportunities"
+                  )}
+                </button>
+              )}
             </div>
 
             {/* RIGHT: Detail */}
