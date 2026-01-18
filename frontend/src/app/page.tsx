@@ -3,108 +3,127 @@
 import { useState } from "react";
 import { Dashboard } from "@/components/Dashboard";
 import { Activity, Command, Globe } from "lucide-react";
-import Link from "next/link";
 import { cn } from "@/lib/utils";
 
 type SentimentTab = "divergence" | "topics" | "trends";
+type MainTab = "terminal" | "sentiment";
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<"terminal" | "sentiment">("terminal");
+  const [activeTab, setActiveTab] = useState<MainTab>("terminal");
   const [sentimentTab, setSentimentTab] = useState<SentimentTab>("divergence");
+
+  const TabSwitcher = () => (
+    <div className="flex items-center">
+      <div className="flex items-center border-l border-zinc-800 ml-6 pl-6">
+        <button
+          onClick={() => setActiveTab("terminal")}
+          className={cn(
+            "relative px-3 py-1 text-xs font-medium tracking-wide transition-colors",
+            activeTab === "terminal"
+              ? "text-white"
+              : "text-zinc-600 hover:text-zinc-400"
+          )}
+        >
+          <span className="flex items-center gap-1.5">
+            <span className={cn(
+              "w-1.5 h-1.5 rounded-full transition-colors",
+              activeTab === "terminal" ? "bg-emerald-500" : "bg-zinc-700"
+            )} />
+            Terminal
+          </span>
+          {activeTab === "terminal" && (
+            <span className="absolute bottom-0 left-3 right-3 h-px bg-white" />
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab("sentiment")}
+          className={cn(
+            "relative px-3 py-1 text-xs font-medium tracking-wide transition-colors",
+            activeTab === "sentiment"
+              ? "text-white"
+              : "text-zinc-600 hover:text-zinc-400"
+          )}
+        >
+          Sentiment
+          {activeTab === "sentiment" && (
+            <span className="absolute bottom-0 left-3 right-3 h-px bg-white" />
+          )}
+        </button>
+      </div>
+    </div>
+  );
 
   return (
     <div className="flex flex-col h-screen bg-[#000000]">
-      {/* Top Tab Switcher */}
-      <div className="h-12 border-b border-zinc-800 bg-[#0a0a0a] flex items-center px-4 shrink-0">
-        <div className="flex items-center gap-1 bg-zinc-900/80 rounded-lg p-1">
-          <button
-            onClick={() => setActiveTab("terminal")}
-            className={cn(
-              "flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-all",
-              activeTab === "terminal"
-                ? "bg-zinc-800 text-white"
-                : "text-zinc-500 hover:text-zinc-300"
-            )}
-          >
-            <span className={cn(
-              "w-2 h-2 rounded-full",
-              activeTab === "terminal" ? "bg-emerald-500" : "bg-zinc-600"
-            )} />
-            Terminal
-          </button>
-          <button
-            onClick={() => setActiveTab("sentiment")}
-            className={cn(
-              "flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-all",
-              activeTab === "sentiment"
-                ? "bg-zinc-800 text-white"
-                : "text-zinc-500 hover:text-zinc-300"
-            )}
-          >
-            Sentiment
-          </button>
-        </div>
-      </div>
-
-      {/* Content Area */}
       {activeTab === "terminal" ? (
         <div className="flex-1 overflow-hidden">
-          <Dashboard />
+          <Dashboard tabSwitcher={<TabSwitcher />} />
         </div>
       ) : (
-        <div className="flex-1 flex overflow-hidden">
-          {/* Small Sentiment Sidebar */}
-          <div className="w-48 bg-[#050505] border-r border-zinc-800 flex flex-col shrink-0">
-            <div className="p-4">
-              <div className="text-[10px] uppercase tracking-widest text-zinc-600 font-bold mb-3">
-                Analysis
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Sentiment Header */}
+          <header className="h-12 border-b border-zinc-800 bg-[#050505] flex items-center justify-between px-4 shrink-0">
+            <div className="flex items-center gap-6">
+              <div className="flex gap-6 text-xs font-sans tracking-wide">
+                <div className="flex gap-2">
+                  <span className="text-zinc-500 uppercase tracking-widest font-bold">Sentiment Analysis</span>
+                </div>
               </div>
-              <nav className="space-y-1">
-                <button
-                  onClick={() => setSentimentTab("divergence")}
-                  className={cn(
-                    "w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-all",
-                    sentimentTab === "divergence"
-                      ? "bg-blue-500/10 text-blue-400"
-                      : "text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
-                  )}
-                >
-                  <Activity className="w-4 h-4" />
-                  Divergence
-                </button>
-                <button
-                  onClick={() => setSentimentTab("topics")}
-                  className={cn(
-                    "w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-all",
-                    sentimentTab === "topics"
-                      ? "bg-blue-500/10 text-blue-400"
-                      : "text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
-                  )}
-                >
-                  <Command className="w-4 h-4" />
-                  Topics
-                </button>
-                <button
-                  onClick={() => setSentimentTab("trends")}
-                  className={cn(
-                    "w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-all",
-                    sentimentTab === "trends"
-                      ? "bg-blue-500/10 text-blue-400"
-                      : "text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
-                  )}
-                >
-                  <Globe className="w-4 h-4" />
-                  Trends
-                </button>
-              </nav>
+              <TabSwitcher />
             </div>
-          </div>
+          </header>
+          
+          <div className="flex-1 flex overflow-hidden">
+            {/* Small Sentiment Sidebar */}
+            <div className="w-44 bg-[#050505] border-r border-zinc-800 flex flex-col shrink-0">
+              <div className="p-3">
+                <nav className="space-y-0.5">
+                  <button
+                    onClick={() => setSentimentTab("divergence")}
+                    className={cn(
+                      "w-full flex items-center gap-2 px-2.5 py-1.5 rounded text-xs font-medium transition-all",
+                      sentimentTab === "divergence"
+                        ? "bg-white/5 text-white"
+                        : "text-zinc-600 hover:bg-white/5 hover:text-zinc-400"
+                    )}
+                  >
+                    <Activity className="w-3.5 h-3.5" />
+                    Divergence
+                  </button>
+                  <button
+                    onClick={() => setSentimentTab("topics")}
+                    className={cn(
+                      "w-full flex items-center gap-2 px-2.5 py-1.5 rounded text-xs font-medium transition-all",
+                      sentimentTab === "topics"
+                        ? "bg-white/5 text-white"
+                        : "text-zinc-600 hover:bg-white/5 hover:text-zinc-400"
+                    )}
+                  >
+                    <Command className="w-3.5 h-3.5" />
+                    Topics
+                  </button>
+                  <button
+                    onClick={() => setSentimentTab("trends")}
+                    className={cn(
+                      "w-full flex items-center gap-2 px-2.5 py-1.5 rounded text-xs font-medium transition-all",
+                      sentimentTab === "trends"
+                        ? "bg-white/5 text-white"
+                        : "text-zinc-600 hover:bg-white/5 hover:text-zinc-400"
+                    )}
+                  >
+                    <Globe className="w-3.5 h-3.5" />
+                    Trends
+                  </button>
+                </nav>
+              </div>
+            </div>
 
-          {/* Sentiment Content */}
-          <div className="flex-1 overflow-hidden">
-            {sentimentTab === "divergence" && <DivergenceContent />}
-            {sentimentTab === "topics" && <TopicsContent />}
-            {sentimentTab === "trends" && <TrendsContent />}
+            {/* Sentiment Content */}
+            <div className="flex-1 overflow-hidden">
+              {sentimentTab === "divergence" && <DivergenceContent />}
+              {sentimentTab === "topics" && <TopicsContent />}
+              {sentimentTab === "trends" && <TrendsContent />}
+            </div>
           </div>
         </div>
       )}

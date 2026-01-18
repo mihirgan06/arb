@@ -95,7 +95,11 @@ const FORMULAS = {
 
 type FormulaKey = keyof typeof FORMULAS;
 
-export function Dashboard() {
+interface DashboardProps {
+  tabSwitcher?: React.ReactNode;
+}
+
+export function Dashboard({ tabSwitcher }: DashboardProps) {
   const [opps, setOpps] = useState<Opportunity[]>([]);
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
@@ -213,13 +217,14 @@ export function Dashboard() {
     <div className="flex flex-col h-full bg-[#000000] text-zinc-300 font-sans selection:bg-blue-900 selection:text-white">
       {/* 1. TOP BAR: Global Stats & Controls */}
       <header className="h-12 border-b border-zinc-800 bg-[#050505] flex items-center justify-between px-4 shrink-0">
-        <div className="flex items-center gap-6">
+        <div className="flex items-center">
           <div className="flex gap-6 text-xs font-sans tracking-wide">
             <div className="flex gap-2">
               <span className="text-zinc-500 uppercase tracking-widest font-bold">Arbitrage Opportunities</span>
               <span className="text-zinc-100 font-mono">{totalCount}</span>
             </div>
           </div>
+          {tabSwitcher}
         </div>
         <div className="flex items-center gap-2">
           <button 
