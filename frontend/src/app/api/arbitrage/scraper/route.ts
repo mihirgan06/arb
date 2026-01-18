@@ -19,6 +19,8 @@ export async function POST(request: Request) {
     const { searchParams } = new URL(request.url);
     const mode = searchParams.get("mode") || "batch"; // "batch" = one big prompt, "pairwise" = old way
     const maxEvents = parseInt(searchParams.get("maxEvents") || "100");
+    const maxCalls = parseInt(searchParams.get("maxCalls") || "50");
+    const targetArbs = parseInt(searchParams.get("targetArbs") || "0");
     
     console.log(`[Scraper] Starting ${mode} scrape with ${maxEvents} events...`);
 

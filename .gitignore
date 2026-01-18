@@ -1,1 +1,31 @@
+# Environment files
+.env
+.env.*
+!.env.example
 frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# Dependencies
+node_modules/
+
+# Build outputs
+.next/
+dist/
+build/
+coverage/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Supabase local
+supabase/.env
+supabase/.env.*
+supabase/.temp/

@@ -210,19 +210,14 @@ export function Dashboard() {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-[#000000] text-zinc-300 font-sans selection:bg-blue-900 selection:text-white">
+    <div className="flex flex-col h-full bg-[#000000] text-zinc-300 font-sans selection:bg-blue-900 selection:text-white">
       {/* 1. TOP BAR: Global Stats & Controls */}
       <header className="h-12 border-b border-zinc-800 bg-[#050505] flex items-center justify-between px-4 shrink-0">
         <div className="flex items-center gap-6">
-          <div className="flex items-center gap-2 text-zinc-100 font-bold tracking-tight">
-            <Activity className="w-4 h-4 text-blue-500" />
-            Arbiter
-          </div>
-          <div className="h-4 w-px bg-zinc-800" />
           <div className="flex gap-6 text-xs font-sans tracking-wide">
             <div className="flex gap-2">
-              <span className="text-zinc-500">OPPORTUNITIES</span>
-              <span className="text-zinc-100">{totalCount}</span>
+              <span className="text-zinc-500 uppercase tracking-widest font-bold">Arbitrage Opportunities</span>
+              <span className="text-zinc-100 font-mono">{totalCount}</span>
             </div>
           </div>
         </div>
@@ -230,15 +225,15 @@ export function Dashboard() {
           <button 
             onClick={scanMarkets}
             disabled={scanning}
-            className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium uppercase tracking-wide transition-colors disabled:opacity-50"
+            className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold uppercase tracking-widest transition-colors disabled:opacity-50 rounded-sm"
           >
             {scanning ? "SCANNING..." : "SCAN MARKETS"}
           </button>
           <button 
             onClick={refresh}
-            className="p-1.5 hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors"
+            className="p-1.5 hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors rounded-full"
           >
-            <RefreshCw className={cn("w-4 h-4", loading && "animate-spin")} />
+            <RefreshCw className={cn("w-3.5 h-3.5", loading && "animate-spin")} />
           </button>
         </div>
       </header>
@@ -349,7 +344,7 @@ export function Dashboard() {
                       contentStyle={{ background: '#09090b', border: '1px solid #27272a', borderRadius: '4px', fontSize: '12px', boxShadow: '0 4px 20px rgba(0,0,0,0.5)' }}
                       itemStyle={{ color: '#e4e4e7' }}
                       cursor={{ stroke: '#3b82f6', strokeWidth: 1, strokeDasharray: '4 4' }}
-                      formatter={(value: number) => [`$${value.toFixed(2)}`, "Profit"]}
+                      formatter={(value) => [`$${(value as number)?.toFixed(2) ?? '0.00'}`, "Profit"]}
                       labelFormatter={(label) => `Size: ${label} shares`}
                     />
                     <Area 

@@ -88,12 +88,12 @@ export class MarketAggregator {
 
     const events: DashboardEvent[] = [];
 
-    for (const [key, eventMarkets] of eventMap) {
+    for (const [key, eventMarkets] of Array.from(eventMap.entries())) {
       if (eventMarkets.length === 0) continue;
 
       const firstMarket = eventMarkets[0];
-      const bestYes = Math.max(...eventMarkets.map((m) => m.yesProbability));
-      const bestNo = Math.max(...eventMarkets.map((m) => m.noProbability));
+      const bestYes = Math.max(...eventMarkets.map((m: NormalizedMarket) => m.yesProbability));
+      const bestNo = Math.max(...eventMarkets.map((m: NormalizedMarket) => m.noProbability));
 
       // Find matching discrepancy
       const discrepancy = discrepancies.find((d) => 
@@ -108,7 +108,7 @@ export class MarketAggregator {
         slug: key,
         title: firstMarket.question,
         category: firstMarket.category,
-        markets: eventMarkets.map((m) => ({
+        markets: eventMarkets.map((m: NormalizedMarket) => ({
           platform: m.platform as Platform,
           yesProbability: m.yesProbability,
           noProbability: m.noProbability,

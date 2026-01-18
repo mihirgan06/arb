@@ -30,32 +30,37 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 
 const navMain = [
     {
-        title: "Overview",
+        title: "Arbitrage",
         url: "/",
-        icon: LayoutDashboard,
-    },
-    {
-        title: "Arbitrage Scanner",
-        url: "/arbitrage",
         icon: Zap,
     },
     {
-        title: "Markets",
-        url: "/markets",
+        title: "Divergence",
+        url: "/divergence",
+        icon: Activity,
+    },
+    {
+        title: "Topics",
+        url: "/topics",
+        icon: Command,
+    },
+    {
+        title: "Trends",
+        url: "/trends",
         icon: Globe,
     },
 ]
 
 const navSecondary = [
     {
-        title: "Activity Log",
-        url: "/activity",
-        icon: Activity,
+        title: "Settings",
+        url: "/settings",
+        icon: Settings,
     },
     {
-        title: "History",
-        url: "/history",
-        icon: History,
+        title: "Help",
+        url: "/help",
+        icon: HelpCircle,
     },
 ]
 

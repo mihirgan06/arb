@@ -1,0 +1,6 @@
+export const LOCK_GAMMA_OPEN = 91001;
+export const LOCK_GAMMA_CLOSED = 91002;
+export const LOCK_CLOB_SNAPSHOT = 91003;
+export const LOCK_SENTIMENT_REFRESH = 91004;
+export const LOCK_BIRD_TRENDING = 91005;
+export const LOCK_BIRD_SEARCH = 91006;
