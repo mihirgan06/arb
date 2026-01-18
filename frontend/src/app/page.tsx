@@ -2,9 +2,8 @@
 
 import { useState } from "react";
 import { Dashboard } from "@/components/Dashboard";
-import { Activity, Command, Globe } from "lucide-react";
+import { Activity, Command, Globe, Maximize2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { RefreshCw } from "lucide-react";
 
 type SentimentTab = "divergence" | "topics" | "trends";
 type MainTab = "terminal" | "sentiment";
@@ -52,11 +51,9 @@ export default function Home() {
           <header className="h-11 border-b border-zinc-800/50 bg-[#0a0a0a] flex items-center justify-between px-4 shrink-0">
             <div className="flex items-center gap-6">
               {/* Logo */}
-              <div className="flex items-center gap-2.5">
-                <div className="h-6 w-6 rounded-md bg-white/10 flex items-center justify-center">
-                  <Command className="h-3.5 w-3.5 text-white/80" />
-                </div>
-                <span className="text-sm font-semibold text-white/90 tracking-tight">Arbiter</span>
+              <div className="flex items-center gap-2">
+                <Maximize2 className="h-3.5 w-3.5 text-blue-500" />
+                <span className="text-xs font-bold text-white uppercase tracking-widest">Arbiter</span>
               </div>
               
               {/* Divider */}
