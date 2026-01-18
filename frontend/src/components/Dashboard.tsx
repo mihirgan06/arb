@@ -95,23 +95,27 @@ export function Dashboard() {
                       "p-4 rounded-xl cursor-pointer border transition-all",
                       selected === o ? "bg-emerald-500/10 border-emerald-500/40" : "bg-zinc-900 border-zinc-800 hover:border-zinc-600"
                     )}>
-                    <div className="flex items-center gap-2 mb-3">
-                      <span className="px-2 py-1 rounded bg-emerald-500/20 text-emerald-400 text-sm font-mono font-bold">
-                        +${o.profitAt100Shares.toFixed(2)}
-                      </span>
-                      <span className="text-xs text-zinc-500">/ 100 shares</span>
-                    </div>
-                    <div className="space-y-2 text-sm">
+                    <div className="space-y-3 text-sm">
                       <div>
-                        <span className="text-emerald-400 text-xs">BUY</span>
-                        <p className="text-white">{o.market1Question}</p>
-                        <p className="text-zinc-500 text-xs">@ ${o.buyPrice.toFixed(4)}</p>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-emerald-400 text-xs font-semibold">BUY {o.executionStrategy.buyOutcome}</span>
+                        </div>
+                        <p className="text-white mb-1">{o.market1Question}</p>
+                        <div className="flex gap-3 text-xs">
+                          <span className="text-zinc-500">YES: ${o.market1YesRange.bestAsk.toFixed(4)}</span>
+                          <span className="text-zinc-500">NO: ${o.market1NoRange.bestAsk.toFixed(4)}</span>
+                        </div>
                       </div>
                       <div className="text-zinc-600 text-center">↓</div>
                       <div>
-                        <span className="text-red-400 text-xs">SELL</span>
-                        <p className="text-zinc-300">{o.market2Question}</p>
-                        <p className="text-zinc-500 text-xs">@ ${o.sellPrice.toFixed(4)}</p>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-red-400 text-xs font-semibold">SELL {o.executionStrategy.sellOutcome}</span>
+                        </div>
+                        <p className="text-zinc-300 mb-1">{o.market2Question}</p>
+                        <div className="flex gap-3 text-xs">
+                          <span className="text-zinc-500">YES: ${o.market2YesRange.bestBid.toFixed(4)}</span>
+                          <span className="text-zinc-500">NO: ${o.market2NoRange.bestBid.toFixed(4)}</span>
+                        </div>
                       </div>
                     </div>
                   </div>
