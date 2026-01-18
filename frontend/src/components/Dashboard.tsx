@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useEffect, useState, useRef } from "react";
-import { Info, Loader2, RefreshCw, Sparkles } from "lucide-react";
+import { Info, Loader2, RefreshCw, Sparkles, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { calculateSlippageWarning } from "@/lib/slippage";
 import {
   AreaChart,
   Area,
@@ -101,6 +102,15 @@ export function Dashboard() {
   };
 
   const currentProfit = selected ? getProfit(selected.profitCurve, shares) : null;
+
+  // Calculate slippage warning
+  const slippageWarning = selected ? calculateSlippageWarning({
+    tradeSize: shares,
+    bestBuyPrice: selected.market1YesRange?.midpoint || selected.buyPrice,
+    avgBuyExecutionPrice: selected.buyPrice,
+    bestSellPrice: selected.market2YesRange?.midpoint || selected.sellPrice,
+    avgSellExecutionPrice: selected.sellPrice,
+  }) : null;
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white p-6">
