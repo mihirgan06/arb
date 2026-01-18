@@ -18,7 +18,7 @@ export interface CachedCorrelation {
   market2_token_yes: string;
   market2_yes_price: number;
   market2_no_price: number;
-  correlation_type: 'SAME' | 'OPPOSITE';
+  correlation_type: 'SAME' | 'OPPOSITE' | 'NONE';
   reasoning: string;
   has_liquidity: boolean;
   profit_at_100_shares: number | null;
