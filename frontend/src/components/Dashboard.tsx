@@ -398,13 +398,10 @@ export function Dashboard({ tabSwitcher }: DashboardProps) {
                       <InfoButton type="profit" />
                     </label>
                     <div className={cn(
-                      "w-full bg-zinc-900/50 border border-zinc-800 font-mono text-sm px-3 py-2.5 rounded flex items-center justify-between",
+                      "w-full bg-zinc-900/50 border border-zinc-800 font-mono text-sm px-3 py-2.5 rounded",
                       (currentProfit?.profit || 0) > 0 ? "text-emerald-400 border-emerald-500/20 bg-emerald-500/5" : "text-red-400"
                     )}>
                       <span className="flex items-center"><DollarSign className="w-3 h-3 mr-1" />{currentProfit?.profit.toFixed(2) || "0.00"}</span>
-                      <span className="text-[10px] bg-emerald-500/20 px-1.5 py-0.5 rounded text-emerald-300">
-                         {currentProfit ? ((currentProfit.profit / currentProfit.totalCost) * 100).toFixed(1) : 0}%
-                      </span>
                     </div>
                   </div>
                 </div>
