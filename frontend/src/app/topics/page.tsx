@@ -6,6 +6,7 @@ import { TopicControls } from "@/components/TopicControls";
 import { matchMarketsByText } from "@/lib/semanticSearch";
 import { MoodGauge } from "@/components/MoodGauge";
 import { EmotionBars } from "@/components/EmotionBars";
+import { TopicAISummary } from "@/components/TopicAISummary";
 
 export const dynamic = "force-dynamic";
 
@@ -257,6 +258,26 @@ export default async function TopicsPage({
             </div>
           ) : (
             <div className="mt-8 space-y-6">
+              {/* AI Summary - Top of results */}
+              <TopicAISummary
+                topic={q}
+                mood={topicMood}
+                emotions={topicEmotions}
+                marketsCount={matchesWithPrice.length}
+                marketsWithSentiment={marketsWithMood}
+                tweetCount={tweetTotal}
+                topMarkets={matchesWithPrice.slice(0, 5).map((m) => {
+                  const sem = semMap.get(m.condition_id);
+                  const tok = tokMap.get(m.condition_id);
+                  return {
+                    question: m.question,
+                    price: tok?.mid ?? null,
+                    sentiment: sem?.blended_mood ?? null,
+                    divergence: sem?.divergence_adj ?? null,
+                  };
+                })}
+              />
+
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <MoodGauge value={typeof topicMood === "number" ? topicMood : null} />
                 <div className="rounded-lg border border-zinc-800 bg-[#050505] p-5">
