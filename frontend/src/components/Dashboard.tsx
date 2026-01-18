@@ -1,10 +1,29 @@
 "use client";
 
-import React, { useEffect, useState, useRef } from "react";
-import { Info, Loader2, RefreshCw, Sparkles, AlertTriangle, Activity, Shield } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
+import { 
+  Loader2, 
+  RefreshCw, 
+  ArrowRight,
+  TrendingUp,
+  Zap,
+  LayoutGrid,
+  ShieldCheck,
+  Target,
+  BarChart3,
+  MousePointer2,
+  ChevronRight,
+  ChevronLeft,
+  Activity,
+  Maximize2,
+  Navigation2,
+  Radar,
+  X
+} from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
-import { calculateSlippageWarning } from "@/lib/slippage";
-import { calculateVolatility, calculateRiskProfile } from "@/lib/volatility";
+import { calculateVolatility } from "@/lib/volatility";
 import {
   AreaChart,
   Area,
@@ -15,6 +34,20 @@ import {
 } from "recharts";
 import type { ArbitrageOpportunity } from "@/services/arbitrage-engine";
 
+// Dynamically import the Radar Grid
+const RadarGrid = dynamic(() => import("./RadarGrid"), { 
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-full flex flex-col items-center justify-center gap-4 opacity-20">
+      <div className="relative">
+        <Radar className="w-16 h-16 animate-spin text-[#00FF80]" style={{ animationDuration: '3s' }} />
+        <div className="absolute inset-0 bg-[#00FF80] blur-2xl opacity-20 rounded-full" />
+      </div>
+      <p className="font-display tracking-[0.4em] text-[10px] text-[#00FF80]">CALIBRATING_RADAR_ARRAY</p>
+    </div>
+  )
+});
+
 interface Opportunity extends ArbitrageOpportunity {
   correlation?: { type: string; confidence: number; reasoning: string };
 }
@@ -22,78 +55,35 @@ interface Opportunity extends ArbitrageOpportunity {
 export function Dashboard() {
   const [opps, setOpps] = useState<Opportunity[]>([]);
   const [loading, setLoading] = useState(true);
-  const [findingMore, setFindingMore] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [selected, setSelected] = useState<Opportunity | null>(null);
-  const [showWhy, setShowWhy] = useState(false);
   const [shares, setShares] = useState(100);
-  const [page, setPage] = useState(0);
-  const [hasMore, setHasMore] = useState(false);
-  const [totalCount, setTotalCount] = useState(0);
-  const hasFetched = useRef(false);
+  const [hasFetched, setHasFetched] = useState(false);
+  const [showRightSidebar, setShowRightSidebar] = useState(true);
+  const [showLeftSidebar, setShowLeftSidebar] = useState(true);
+  const [showChartModal, setShowChartModal] = useState(false);
 
-  const fetchOpportunities = async (pageNum = 0) => {
-    const r = await fetch(`/api/arbitrage/opportunities?page=${pageNum}&limit=15`);
-    const d = await r.json();
-    if (d.success && d.opportunities) {
-      if (pageNum === 0) {
-        setOpps(d.opportunities);
-        if (d.opportunities.length > 0) setSelected(d.opportunities[0]);
-      } else {
-        setOpps(prev => [...prev, ...d.opportunities]);
-      }
-      setHasMore(d.hasMore || false);
-      setTotalCount(d.totalOpportunities || d.opportunities.length);
-      setPage(pageNum);
-      return d.opportunities.length;
-    }
-    return 0;
+  const handleSelectOpportunity = (opp: Opportunity) => {
+    setSelected(opp);
+    setShowLeftSidebar(false);
   };
 
-  useEffect(() => {
-    if (hasFetched.current) return;
-    hasFetched.current = true;
-    
-    const init = async () => {
-      try {
-        await fetchOpportunities(0);
-      } catch (e) { 
-        console.error(e); 
-      }
-      finally { setLoading(false); }
-    };
-    init();
-  }, []);
-
-  const refresh = async () => {
-    setLoading(true);
-    setPage(0);
+  const fetchOpportunities = async () => {
     try {
-      await fetchOpportunities(0);
+      const r = await fetch(`/api/arbitrage/opportunities?page=0&limit=15`);
+      const d = await r.json();
+      if (d.success && d.opportunities) {
+        setOpps(d.opportunities);
+        // Removed auto-selection of first opportunity
+      }
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   };
 
-  const loadMore = async () => {
-    setLoadingMore(true);
-    try {
-      await fetchOpportunities(page + 1);
-    } catch (e) { console.error(e); }
-    finally { setLoadingMore(false); }
-  };
-
-  const findMoreWithAI = async () => {
-    setFindingMore(true);
-    try {
-      const r = await fetch("/api/arbitrage/scraper", { method: "POST" });
-      const d = await r.json();
-      if (d.success) {
-        // Refresh from page 0 to get new opportunities
-        await fetchOpportunities(0);
-      }
-    } catch (e) { console.error(e); }
-    finally { setFindingMore(false); }
-  };
+  useEffect(() => {
+    if (hasFetched) return;
+    fetchOpportunities();
+    setHasFetched(true);
+  }, [hasFetched]);
 
   const getProfit = (curve: Opportunity["profitCurve"], targetShares: number) => {
     if (!curve || curve.length === 0) return null;
@@ -103,386 +93,517 @@ export function Dashboard() {
   };
 
   const currentProfit = selected ? getProfit(selected.profitCurve, shares) : null;
-
-  // Calculate bid-ask spreads
+  
   const spread1 = selected ? (selected.market1YesRange?.max || 0) - (selected.market1YesRange?.min || 0) : 0;
   const spread2 = selected ? (selected.market2YesRange?.max || 0) - (selected.market2YesRange?.min || 0) : 0;
-
-  // Calculate slippage using proper formula:
-  // Slippage (%) = ((Executed Price − Expected Price) / Expected Price) × 100
-  const slippageWarning = selected ? calculateSlippageWarning({
-    tradeSize: shares,
-    expectedBuyPrice: selected.market1YesRange?.midpoint || selected.buyPrice,
-    executedBuyPrice: selected.buyPrice,
-    expectedSellPrice: selected.market2YesRange?.midpoint || selected.sellPrice,
-    executedSellPrice: selected.sellPrice,
-  }) : null;
-
-  // Calculate implied volatility using proper formula:
-  // σ ≈ √(2π / T) × (Option Price / Forward Price)
-  const volatility1 = selected ? calculateVolatility({
+  const vol1 = selected ? calculateVolatility({
     optionPrice: selected.market1YesDisplayPrice ?? selected.market1YesRange?.midpoint ?? 0.5,
     bidAskSpread: spread1 || 0.02,
-    timeToExpiry: 0.25, // Assume 3 months average
+    timeToExpiry: 0.25,
   }) : null;
-
-  const volatility2 = selected ? calculateVolatility({
+  const vol2 = selected ? calculateVolatility({
     optionPrice: selected.market2YesDisplayPrice ?? selected.market2YesRange?.midpoint ?? 0.5,
     bidAskSpread: spread2 || 0.02,
     timeToExpiry: 0.25,
   }) : null;
-
-  // Combined volatility (take the higher one - conservative)
-  const combinedVolatility = volatility1 && volatility2 ? {
-    level: volatility1.impliedVol >= volatility2.impliedVol ? volatility1.level : volatility2.level,
-    impliedVol: Math.max(volatility1.impliedVol, volatility2.impliedVol),
-    impliedVolPercent: Math.max(volatility1.impliedVolPercent, volatility2.impliedVolPercent),
-    score: Math.max(volatility1.score, volatility2.score),
-    message: volatility1.impliedVol >= volatility2.impliedVol ? volatility1.message : volatility2.message,
-  } : null;
-
-  // Calculate comprehensive risk profile
-  const riskProfile = selected && currentProfit && slippageWarning && combinedVolatility ? calculateRiskProfile({
-    profitAmount: currentProfit.profit,
-    slippagePercent: slippageWarning.totalSlippagePercent,
-    slippageLevel: slippageWarning.slippageLevel,
-    impliedVol: combinedVolatility.impliedVol,
-    volatilityLevel: combinedVolatility.level,
-    maxShares: selected.maxProfitableShares,
-    currentShares: shares,
-    spread1: spread1 || 0.02,
-    spread2: spread2 || 0.02,
-  }) : null;
+  const maxVol = Math.max(vol1?.impliedVolPercent || 0, vol2?.impliedVolPercent || 0);
+  const confidenceScore = Math.max(0, Math.min(100, 100 - maxVol));
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white p-6">
-      <div className="max-w-6xl mx-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold">Polymarket Arbitrage</h1>
-          <div className="flex gap-2">
-            <button onClick={refresh} disabled={loading}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm disabled:opacity-50">
-              <RefreshCw className={cn("w-4 h-4", loading && "animate-spin")} /> Refresh
+    <div className="h-screen bg-[#020202] text-white overflow-hidden flex font-sans">
+      {/* Tactical Glow */}
+      <div className="fixed inset-0 pointer-events-none z-0">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[80%] h-[80%] bg-[#00FF80]/5 blur-[160px] rounded-full" />
+      </div>
+
+      {/* Modern Compact Left Sidebar */}
+      <aside className="w-20 border-r border-white/5 bg-black/40 backdrop-blur-3xl flex flex-col items-center py-10 z-50 shrink-0">
+        <div className="w-10 h-10 bg-[#00FF80] rounded-xl flex items-center justify-center shadow-[0_0_30px_rgba(0,255,128,0.3)] mb-12 group cursor-pointer">
+          <Zap className="text-black fill-black transition-transform group-hover:scale-110" size={20} />
+        </div>
+        <nav className="flex flex-col gap-10">
+          <SidebarIcon icon={<LayoutGrid size={20} />} active />
+          <SidebarIcon icon={<Activity size={20} />} />
+          <SidebarIcon icon={<BarChart3 size={20} />} />
+          <SidebarIcon icon={<ShieldCheck size={20} />} />
+        </nav>
+        <div className="mt-auto">
+          <SidebarIcon icon={<Maximize2 size={18} />} />
+        </div>
+      </aside>
+
+      {/* Main Experience Area */}
+      <div className="flex-1 flex relative overflow-hidden h-full">
+        
+        {/* FULL PAGE BACKGROUND: The Tactical Radar */}
+        <motion.section 
+          animate={{ 
+            left: showLeftSidebar ? 340 : 0,
+            width: showLeftSidebar ? "calc(100% - 340px)" : "100%"
+          }}
+          transition={{ type: "spring", damping: 25, stiffness: 200 }}
+          className="absolute inset-y-0 right-0 z-10 overflow-hidden"
+        >
+          <RadarGrid 
+            opportunities={opps} 
+            onSelect={handleSelectOpportunity} 
+            selectedId={selected?.id} 
+          />
+        </motion.section>
+
+        {/* OVERLAY: Left Feed (Slide-in/out) */}
+        <aside className="relative z-40 pointer-events-none flex h-full shrink-0">
+          <AnimatePresence mode="wait">
+            {showLeftSidebar && (
+              <motion.div
+                initial={{ x: -400, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                exit={{ x: -400, opacity: 0 }}
+                transition={{ type: "spring", damping: 25, stiffness: 200 }}
+                className="w-[340px] h-full bg-black/60 backdrop-blur-3xl border-r border-white/5 p-8 flex flex-col gap-6 pointer-events-auto"
+              >
+                <header className="mb-6 shrink-0">
+                  <h1 className="text-2xl font-display font-bold text-gradient tracking-tight">Signal Radar</h1>
+                  <div className="flex items-center gap-2 mt-2">
+                    <span className="w-1.5 h-1.5 bg-[#00FF80] rounded-full animate-ping shadow-[0_0_10px_#00FF80]" />
+                    <p className="text-[9px] uppercase tracking-widest text-white/40 font-bold">Scanning High Yield Nodes</p>
+                  </div>
+                </header>
+
+                <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar flex flex-col gap-3">
+                  {loading ? (
+                    <div className="h-full flex items-center justify-center opacity-20">
+                      <Loader2 className="animate-spin w-8 h-8" />
+                    </div>
+                  ) : (
+                    opps.map((o, i) => (
+                      <motion.div
+                        key={o.id || i}
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: i * 0.05 }}
+                        onClick={() => handleSelectOpportunity(o)}
+                        className={cn(
+                          "p-4 glass rounded-[1.25rem] cursor-pointer group transition-all duration-500 shrink-0",
+                          selected === o 
+                            ? "bg-[#00FF80]/[0.08] border-[#00FF80]/30 shadow-[0_0_20px_rgba(0,255,128,0.05)]" 
+                            : "glass-hover"
+                        )}
+                      >
+                        <div className="flex justify-between items-start mb-2">
+                          <h3 className="font-bold text-[11px] leading-snug text-white/70 group-hover:text-white transition-colors line-clamp-2 pr-2 uppercase">
+                            {o.market1Question}
+                          </h3>
+                          <div className="text-right whitespace-nowrap">
+                            <div className="text-sm font-display font-bold text-[#00FF80]">
+                              +${(o.profitCurve?.[0]?.profit || 0).toFixed(2)}
+                            </div>
+                          </div>
+                        </div>
+                      </motion.div>
+                    ))
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Toggle Tab */}
+          <div className="flex flex-col justify-center ml-[-1px] pointer-events-auto">
+            <button
+              onClick={() => setShowLeftSidebar(!showLeftSidebar)}
+              className="w-8 h-16 glass border-l-0 rounded-r-xl flex items-center justify-center hover:bg-white/5 transition-colors"
+            >
+              {showLeftSidebar ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
+            </button>
+          </div>
+        </aside>
+
+        {/* OVERLAY: Top Controls */}
+        <div className="absolute top-8 left-1/2 -translate-x-1/2 z-30 flex items-center gap-4 pointer-events-none">
+          <div className="glass px-6 py-3 rounded-2xl flex items-center gap-4 pointer-events-auto shadow-[0_0_40px_rgba(0,0,0,0.5)] border-[#00FF80]/10">
+            <div className="flex items-center gap-2 border-r border-white/10 pr-4">
+              <Radar size={16} className="text-[#00FF80]" />
+              <span className="text-[10px] font-bold uppercase tracking-widest text-white/60">Tactical Array</span>
+            </div>
+            <button 
+              onClick={() => { setLoading(true); fetchOpportunities(); }}
+              className="flex items-center gap-2 hover:text-[#00FF80] transition-colors"
+            >
+              <RefreshCw size={14} className={cn(loading && "animate-spin")} />
+              <span className="text-[10px] font-bold uppercase tracking-widest">Resync Scan</span>
             </button>
           </div>
         </div>
 
-
-        {loading ? (
-          <div className="flex items-center justify-center h-64">
-            <Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
-          </div>
-        ) : opps.length === 0 ? (
-          <div className="text-center py-20">
-            <p className="text-zinc-500 mb-4">No opportunities in cache</p>
-            <button onClick={findMoreWithAI} disabled={findingMore}
-              className="px-6 py-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium disabled:opacity-50">
-              {findingMore ? (
-                <span className="flex items-center gap-2">
-                  <Loader2 className="w-4 h-4 animate-spin" /> Finding opportunities...
-                </span>
-              ) : (
-                <span className="flex items-center gap-2">
-                  <Sparkles className="w-4 h-4" /> Find Opportunities with AI
-                </span>
-              )}
-            </button>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* LEFT: List */}
-            <div className="space-y-3">
-              <p className="text-sm text-zinc-500">{opps.length} opportunities found</p>
-              <div className="space-y-2 max-h-[70vh] overflow-y-auto pr-2">
-                {opps.map((o, i) => (
-                  <div key={i} onClick={() => { setSelected(o); setShowWhy(false); setShares(100); }}
-                    className={cn(
-                      "p-4 rounded-xl cursor-pointer border transition-all",
-                      selected === o ? "bg-emerald-500/10 border-emerald-500/40" : "bg-zinc-900 border-zinc-800 hover:border-zinc-600"
-                    )}>
-                    <div className="space-y-3 text-sm">
-                      <div>
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-emerald-400 text-xs font-semibold">BUY {o.executionStrategy.buyOutcome}</span>
-                        </div>
-                        <p className="text-white mb-1">{o.market1Question}</p>
-                        <div className="flex gap-3 text-xs">
-                          <span className="text-zinc-500">YES: ${(o.market1YesDisplayPrice ?? o.market1YesRange.midpoint).toFixed(4)}</span>
-                          <span className="text-zinc-500">NO: ${(o.market1NoDisplayPrice ?? o.market1NoRange.midpoint).toFixed(4)}</span>
-                        </div>
-                      </div>
-                      <div className="text-zinc-600 text-center">↓</div>
-                      <div>
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-red-400 text-xs font-semibold">SELL {o.executionStrategy.sellOutcome}</span>
-                        </div>
-                        <p className="text-zinc-300 mb-1">{o.market2Question}</p>
-                        <div className="flex gap-3 text-xs">
-                          <span className="text-zinc-500">YES: ${(o.market2YesDisplayPrice ?? o.market2YesRange.midpoint).toFixed(4)}</span>
-                          <span className="text-zinc-500">NO: ${(o.market2NoDisplayPrice ?? o.market2NoRange.midpoint).toFixed(4)}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              
-              {/* Load More / Find More Buttons */}
-              <div className="space-y-2 mt-3">
-                {hasMore && (
-                  <button
-                    onClick={loadMore}
-                    disabled={loadingMore}
-                    className="w-full px-4 py-3 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {loadingMore ? (
-                      <span className="flex items-center justify-center gap-2">
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Loading more...
-                      </span>
-                    ) : (
-                      `Load More (${opps.length}/${totalCount})`
-                    )}
-                  </button>
-                )}
-                <button
-                  onClick={findMoreWithAI}
-                  disabled={findingMore}
-                  className="w-full px-4 py-3 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-400 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {findingMore ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Finding new opportunities with AI...
-                    </span>
-                  ) : (
-                    <span className="flex items-center justify-center gap-2">
-                      <Sparkles className="w-4 h-4" />
-                      Find More with AI
-                    </span>
-                  )}
-                </button>
-              </div>
-            </div>
-
-            {/* RIGHT: Detail */}
+        {/* OVERLAY: Floating Multi-Panel Right Area */}
+        <div className="absolute top-0 right-0 z-40 h-full flex flex-row-reverse pointer-events-none overflow-hidden pr-4 py-4 gap-4">
+          <AnimatePresence mode="popLayout">
+            {/* PANEL 1: PROFIT FORGE (Main Info) */}
             {selected && (
-              <div className="space-y-4">
-                {/* Calculator */}
-                <div className="p-5 rounded-xl bg-zinc-900 border border-zinc-800">
-                  <div className="flex items-center justify-between mb-4">
-                    <h2 className="font-semibold">Profit Calculator</h2>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-zinc-500">Shares:</span>
-                      <input type="number" value={shares}
-                        onChange={e => setShares(Math.max(1, parseInt(e.target.value) || 1))}
-                        className="w-24 px-3 py-1 rounded bg-zinc-800 border border-zinc-700 text-white font-mono" />
+              <motion.div
+                key={`forge-${selected.id}`}
+                initial={{ x: 500, opacity: 0, scaleX: 0.9 }}
+                animate={{ x: 0, opacity: 1, scaleX: 1 }}
+                exit={{ x: 500, opacity: 0, scaleX: 0.9 }}
+                transition={{ type: "spring", damping: 25, stiffness: 150 }}
+                className="w-[420px] h-full p-8 flex flex-col gap-4 pointer-events-auto overflow-y-auto custom-scrollbar relative bg-black/80 backdrop-blur-3xl border border-[#00FF80]/20 rounded-[3rem] shadow-[-20px_0_60px_rgba(0,0,0,0.5)]"
+              >
+                {/* Encryption Overlay */}
+                <motion.div 
+                  initial={{ opacity: 1 }}
+                  animate={{ opacity: 0 }}
+                  transition={{ duration: 0.6 }}
+                  className="absolute inset-0 z-[100] pointer-events-none bg-black flex flex-col items-center justify-center p-12 rounded-[3rem]"
+                >
+                  <div className="w-full h-full border border-[#00FF80]/20 relative overflow-hidden flex flex-col items-center justify-center gap-4 bg-[#00FF80]/5 rounded-[2rem]">
+                    <motion.div 
+                      animate={{ top: ["-10%", "110%"] }}
+                      transition={{ duration: 0.5, repeat: 1 }}
+                      className="absolute left-0 right-0 h-1 bg-[#00FF80] shadow-[0_0_20px_#00FF80] z-10"
+                    />
+                    <div className="text-[#00FF80] font-mono text-[6px] grid grid-cols-12 gap-1 w-full h-full opacity-20 p-4 leading-none overflow-hidden">
+                      {Array.from({ length: 120 }).map((_, i) => (
+                        <span key={i}>{Math.random() > 0.5 ? "1" : "0"}</span>
+                      ))}
+                    </div>
+                  </div>
+                </motion.div>
+
+                <header className="mb-2 flex justify-between items-start shrink-0 relative z-10">
+                  <div className="space-y-1">
+                    <p className="text-[9px] font-bold text-[#00FF80] uppercase tracking-[0.3em] font-mono opacity-60">
+                      NODE: {selected.id?.slice(0, 12)}
+                    </p>
+                    <h2 className="text-2xl font-display font-black leading-tight tracking-tighter text-white uppercase italic">
+                      Profit Forge<span className="text-[#00FF80]">.</span>
+                    </h2>
+                  </div>
+                  <button 
+                    onClick={() => { setSelected(null); setShowChartModal(false); }}
+                    className="p-2.5 bg-white/5 hover:bg-red-500/20 text-white/40 hover:text-red-500 rounded-2xl transition-all border border-white/5 hover:border-red-500/50"
+                  >
+                    <X size={20} />
+                  </button>
+                </header>
+
+                <div className="flex-1 flex flex-col gap-4 relative z-10">
+                  {/* Main Profit Card */}
+                  <div className="glass rounded-[2.5rem] p-8 relative overflow-hidden bg-[#00FF80]/5 border-[#00FF80]/20 shrink-0">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.4em] text-[#00FF80]/60 mb-2 font-mono italic">YIELD_EST</p>
+                    <div className="text-6xl font-display font-black text-[#00FF80] tracking-tighter mb-6 drop-shadow-[0_0_20px_rgba(0,255,128,0.3)]">
+                      ${currentProfit?.profit.toFixed(2) || "0.00"}
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 font-mono">
+                      <div className="bg-white/5 border border-white/10 p-4 rounded-2xl">
+                        <span className="text-[9px] text-white/30 uppercase font-bold tracking-widest block mb-1">CAPITAL</span>
+                        <span className="text-base font-bold text-white">${currentProfit?.totalCost.toFixed(2)}</span>
+                      </div>
+                      <div className="bg-white/5 border border-white/10 p-4 rounded-2xl">
+                        <span className="text-[9px] text-white/30 uppercase font-bold tracking-widest block mb-1">ROI</span>
+                        <span className="text-base font-bold text-[#00FF80]">+{((currentProfit?.profit || 0) / (currentProfit?.totalCost || 1) * 100).toFixed(1)}%</span>
+                      </div>
                     </div>
                   </div>
 
-                  {currentProfit && (
-                    <>
-                      <div className="grid grid-cols-3 gap-3 mb-4">
-                        <div className="p-3 rounded-lg bg-zinc-800">
-                          <div className="text-xs text-zinc-500">Cost</div>
-                          <div className="text-lg font-mono">${currentProfit.totalCost.toFixed(2)}</div>
-                        </div>
-                        <div className="p-3 rounded-lg bg-zinc-800">
-                          <div className="text-xs text-zinc-500">Revenue</div>
-                          <div className="text-lg font-mono">${currentProfit.totalRevenue.toFixed(2)}</div>
-                        </div>
-                        <div className="p-3 rounded-lg bg-emerald-500/10">
-                          <div className="text-xs text-zinc-500">Profit</div>
-                          <div className={cn("text-xl font-mono font-bold", currentProfit.profit > 0 ? "text-emerald-400" : "text-red-400")}>
-                            ${currentProfit.profit.toFixed(2)}
-                          </div>
-                        </div>
+                  <div className="grid grid-cols-2 gap-4 shrink-0">
+                    <div className="glass rounded-3xl p-6 border-white/10 bg-white/5">
+                      <p className="text-[9px] text-white/30 uppercase font-bold tracking-widest mb-3 font-mono">SHARES</p>
+                      <input 
+                        type="number" 
+                        value={shares}
+                        onChange={e => setShares(Math.max(1, parseInt(e.target.value) || 1))}
+                        className="bg-[#00FF80]/10 border border-[#00FF80]/20 rounded-xl px-4 py-2 text-xl font-display font-black w-full focus:outline-none focus:border-[#00FF80]/50 transition-all text-[#00FF80]"
+                      />
+                    </div>
+                    <div className="glass rounded-3xl p-6 flex flex-col items-center justify-center shrink-0 border-white/10 bg-white/5">
+                      <p className="text-[9px] text-white/30 uppercase font-bold tracking-widest mb-3 font-mono">CONF</p>
+                      <div className="text-xl font-display font-black text-white">{Math.round(confidenceScore)}%</div>
+                      <div className="w-full h-1 bg-white/10 rounded-full mt-2 overflow-hidden">
+                        <motion.div className="h-full bg-[#00FF80]" animate={{ width: `${confidenceScore}%` }} />
                       </div>
-                      
-                      {/* Slippage & Volatility Indicators */}
-                      <div className="grid grid-cols-2 gap-3 mb-4">
-                        {/* Slippage */}
-                        <div className={cn(
-                          "p-3 rounded-lg border",
-                          slippageWarning?.slippageLevel === "LOW" 
-                            ? "bg-emerald-500/10 border-emerald-500/30"
-                            : slippageWarning?.slippageLevel === "MEDIUM"
-                            ? "bg-yellow-500/10 border-yellow-500/30"
-                            : "bg-red-500/10 border-red-500/30"
-                        )}>
-                          <div className="flex items-center gap-2 mb-1">
-                            <AlertTriangle className={cn(
-                              "w-4 h-4",
-                              slippageWarning?.slippageLevel === "LOW" ? "text-emerald-400"
-                              : slippageWarning?.slippageLevel === "MEDIUM" ? "text-yellow-400"
-                              : "text-red-400"
-                            )} />
-                            <span className="text-xs text-zinc-400">Slippage</span>
-                          </div>
-                          <div className={cn(
-                            "text-lg font-semibold",
-                            slippageWarning?.slippageLevel === "LOW" ? "text-emerald-400"
-                            : slippageWarning?.slippageLevel === "MEDIUM" ? "text-yellow-400"
-                            : "text-red-400"
-                          )}>
-                            {slippageWarning?.totalSlippagePercent.toFixed(1) || "0"}%
-                          </div>
-                          <div className="text-xs text-zinc-500 mt-1">
-                            Buy: {slippageWarning?.buySlippagePercent.toFixed(1) || 0}% / Sell: {slippageWarning?.sellSlippagePercent.toFixed(1) || 0}%
-                          </div>
-                        </div>
+                    </div>
+                  </div>
 
-                        {/* Implied Volatility */}
-                        <div className={cn(
-                          "p-3 rounded-lg border",
-                          combinedVolatility?.level === "LOW" 
-                            ? "bg-emerald-500/10 border-emerald-500/30"
-                            : combinedVolatility?.level === "MEDIUM"
-                            ? "bg-yellow-500/10 border-yellow-500/30"
-                            : "bg-red-500/10 border-red-500/30"
-                        )}>
-                          <div className="flex items-center gap-2 mb-1">
-                            <Activity className={cn(
-                              "w-4 h-4",
-                              combinedVolatility?.level === "LOW" ? "text-emerald-400"
-                              : combinedVolatility?.level === "MEDIUM" ? "text-yellow-400"
-                              : "text-red-400"
-                            )} />
-                            <span className="text-xs text-zinc-400">Implied Vol (σ)</span>
-                          </div>
-                          <div className={cn(
-                            "text-lg font-semibold",
-                            combinedVolatility?.level === "LOW" ? "text-emerald-400"
-                            : combinedVolatility?.level === "MEDIUM" ? "text-yellow-400"
-                            : "text-red-400"
-                          )}>
-                            {combinedVolatility?.impliedVolPercent || 0}%
-                          </div>
-                          <div className="text-xs text-zinc-500 mt-1">
-                            {combinedVolatility?.level || "LOW"} uncertainty
-                          </div>
-                        </div>
+                  <div className="glass rounded-[2rem] p-6 flex flex-col gap-4 shrink-0 border-[#00FF80]/20 bg-black/60">
+                    <h3 className="text-[9px] font-black uppercase tracking-[0.3em] text-[#00FF80]/60 flex items-center gap-2 font-mono">
+                      <Target size={12} /> STRATEGY
+                    </h3>
+                    <div className="space-y-4 relative before:absolute before:left-2 before:top-2 before:bottom-2 before:w-[1px] before:bg-[#00FF80]/20">
+                      <div className="relative pl-8">
+                        <div className="absolute left-0 top-1 w-4 h-4 rounded-full bg-[#00FF80] shadow-[0_0_15px_#00FF80] border-4 border-black" />
+                        <p className="text-[14px] font-black text-white uppercase">{selected.executionStrategy.buyOutcome}</p>
+                        <p className="text-[9px] text-[#00FF80]/40 font-bold uppercase font-mono">{selected.market1Platform}</p>
                       </div>
-                    </>
-                  )}
+                      <div className="relative pl-8">
+                        <div className="absolute left-0 top-1 w-4 h-4 rounded-full bg-white/10 border-4 border-black" />
+                        <p className="text-[14px] font-black text-white/60 uppercase">{selected.executionStrategy.sellOutcome}</p>
+                        <p className="text-[9px] text-white/20 font-bold uppercase font-mono">{selected.market2Platform}</p>
+                      </div>
+                    </div>
+                  </div>
 
-                  <div className="h-52">
+                  {/* MINI CHART (Trigger) */}
+                  <motion.div 
+                    onClick={() => setShowChartModal(!showChartModal)}
+                    className={cn(
+                      "glass rounded-[2.5rem] p-6 h-32 overflow-hidden relative shrink-0 border-white/10 cursor-pointer group/chart transition-all duration-500",
+                      showChartModal ? "border-[#00FF80] bg-[#00FF80]/10 shadow-[0_0_30px_rgba(0,255,128,0.2)]" : "hover:border-[#00FF80]/40 hover:bg-white/5"
+                    )}
+                  >
+                    <div className="flex justify-between items-center mb-2 relative z-10">
+                      <p className="text-[9px] font-black uppercase tracking-[0.4em] text-white/40 font-mono">DELTA_ANALYTICS</p>
+                      <Maximize2 size={12} className={cn("transition-colors", showChartModal ? "text-[#00FF80]" : "text-white/20 group-hover/chart:text-[#00FF80]")} />
+                    </div>
+                    <div className="absolute inset-0 pt-10 px-4 opacity-40 group-hover/chart:opacity-100 transition-opacity">
+                      <ResponsiveContainer width="100%" height={100}>
+                        <AreaChart data={selected.profitCurve}>
+                          <Area type="monotone" dataKey="profit" stroke="#00FF80" strokeWidth={2} fill="#00FF80" fillOpacity={0.1} animationDuration={1000} />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </motion.div>
+                </div>
+              </motion.div>
+            )}
+
+            {/* PANEL 2: STRATEGIC DELTA (Expanded Analytics) */}
+            {selected && showChartModal && (
+              <motion.div
+                key={`delta-${selected.id}`}
+                initial={{ x: 200, opacity: 0, filter: "blur(10px)" }}
+                animate={{ x: 0, opacity: 1, filter: "blur(0px)" }}
+                exit={{ x: 200, opacity: 0, filter: "blur(10px)" }}
+                transition={{ type: "spring", damping: 30, stiffness: 120 }}
+                className="w-[540px] h-full flex flex-col gap-4 pointer-events-auto"
+              >
+                {/* Main Expanded Chart */}
+                <div className="flex-1 glass rounded-[3rem] p-10 bg-[#020202]/90 backdrop-blur-3xl border border-[#00FF80]/30 shadow-2xl flex flex-col">
+                  <header className="flex justify-between items-center mb-10">
+                    <div className="flex items-center gap-3">
+                      <BarChart3 className="text-[#00FF80]" size={20} />
+                      <h3 className="text-xl font-display font-black text-white uppercase italic">Strategic_Delta</h3>
+                    </div>
+                    <span className="text-[9px] font-mono text-[#00FF80]/40 tracking-widest uppercase">Simulation_Active</span>
+                  </header>
+
+                  <div className="flex-1 min-h-0 relative">
                     <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={selected.profitCurve}>
+                      <AreaChart data={selected.profitCurve} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                         <defs>
-                          <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor="#10b981" stopOpacity={0.3}/>
-                            <stop offset="100%" stopColor="#10b981" stopOpacity={0}/>
+                          <linearGradient id="pG_Exp" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#00FF80" stopOpacity={0.4}/>
+                            <stop offset="100%" stopColor="#00FF80" stopOpacity={0}/>
                           </linearGradient>
                         </defs>
-                        <XAxis dataKey="shares" stroke="#52525b" fontSize={10} tickFormatter={v=>`${(v/1000).toFixed(0)}k`}/>
-                        <YAxis stroke="#52525b" fontSize={10} tickFormatter={v=>`$${v}`} width={45}/>
-                        <Tooltip contentStyle={{background:"#18181b",border:"1px solid #3f3f46",borderRadius:6,fontSize:12}}
-                          labelFormatter={v=>`${Number(v).toLocaleString()} shares`}
-                          formatter={(v:number)=>[`$${v.toFixed(2)}`,"Profit"]}/>
-                        <Area type="monotone" dataKey="profit" stroke="#10b981" strokeWidth={2} fill="url(#g)"/>
+                        <XAxis dataKey="shares" hide />
+                        <YAxis hide domain={['auto', 'auto']} />
+                        <Tooltip 
+                          content={({ active, payload }) => {
+                            if (active && payload && payload.length) {
+                              return (
+                                <div className="bg-black/90 border border-[#00FF80]/30 p-3 rounded-xl backdrop-blur-xl">
+                                  <p className="text-[10px] font-mono text-white/40 uppercase mb-1">Iteration</p>
+                                  <p className="text-sm font-black text-[#00FF80]">${payload[0].value.toFixed(2)} @ {payload[0].payload.shares}U</p>
+                                </div>
+                              );
+                            }
+                            return null;
+                          }}
+                        />
+                        <Area 
+                          type="monotone" 
+                          dataKey="profit" 
+                          stroke="#00FF80" 
+                          strokeWidth={4} 
+                          fill="url(#pG_Exp)" 
+                          animationDuration={1500} 
+                        />
                       </AreaChart>
                     </ResponsiveContainer>
                   </div>
-                  <p className="text-xs text-zinc-600 mt-2">Max: {selected.maxProfitableShares.toLocaleString()} shares</p>
-                </div>
 
-                {/* Prices */}
-                <div className="p-5 rounded-xl bg-zinc-900 border border-zinc-800">
-                  <div className="flex items-center justify-between mb-3">
-                    <h2 className="font-semibold">Orderbook</h2>
-                    {selected.correlation && (
-                      <button onClick={() => setShowWhy(!showWhy)}
-                        className={cn("p-1.5 rounded", showWhy ? "bg-emerald-500/20 text-emerald-400" : "bg-zinc-800 text-zinc-500")}>
-                        <Info className="w-4 h-4"/>
-                      </button>
-                    )}
-                  </div>
-                  {showWhy && selected.correlation && (
-                    <div className="mb-4 p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/20 text-sm text-zinc-400">
-                      {selected.correlation.reasoning}
-                    </div>
-                  )}
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <p className="text-emerald-400 text-xs mb-1">BUY @ ${selected.buyPrice.toFixed(4)}</p>
-                      <p className="text-zinc-300 line-clamp-2">{selected.market1Question}</p>
-                    </div>
-                    <div>
-                      <p className="text-red-400 text-xs mb-1">SELL @ ${selected.sellPrice.toFixed(4)}</p>
-                      <p className="text-zinc-300 line-clamp-2">{selected.market2Question}</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Risk Profile Card */}
-                {riskProfile && (
-                  <div className={cn(
-                    "p-5 rounded-xl border",
-                    riskProfile.color === "emerald" ? "bg-emerald-500/5 border-emerald-500/30" :
-                    riskProfile.color === "blue" ? "bg-blue-500/5 border-blue-500/30" :
-                    riskProfile.color === "yellow" ? "bg-yellow-500/5 border-yellow-500/30" :
-                    "bg-red-500/5 border-red-500/30"
-                  )}>
-                    <div className="flex items-center gap-3 mb-3">
-                      <Shield className={cn(
-                        "w-5 h-5",
-                        riskProfile.color === "emerald" ? "text-emerald-400" :
-                        riskProfile.color === "blue" ? "text-blue-400" :
-                        riskProfile.color === "yellow" ? "text-yellow-400" :
-                        "text-red-400"
-                      )} />
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold">Risk Profile:</span>
-                        <span className={cn(
-                          "px-2 py-0.5 rounded text-sm font-bold",
-                          riskProfile.color === "emerald" ? "bg-emerald-500/20 text-emerald-400" :
-                          riskProfile.color === "blue" ? "bg-blue-500/20 text-blue-400" :
-                          riskProfile.color === "yellow" ? "bg-yellow-500/20 text-yellow-400" :
-                          "bg-red-500/20 text-red-400"
-                        )}>
-                          {riskProfile.emoji} {riskProfile.overall}
-                        </span>
-                      </div>
-                    </div>
-
-                    <p className={cn(
-                      "text-sm mb-3",
-                      riskProfile.color === "emerald" ? "text-emerald-300" :
-                      riskProfile.color === "blue" ? "text-blue-300" :
-                      riskProfile.color === "yellow" ? "text-yellow-300" :
-                      "text-red-300"
-                    )}>
-                      {riskProfile.summary}
-                    </p>
-
-                    <div className="space-y-1 mb-4">
-                      {riskProfile.details.map((detail, i) => (
-                        <div key={i} className="flex items-center gap-2 text-xs text-zinc-400">
-                          <span className="w-1.5 h-1.5 rounded-full bg-zinc-600" />
-                          {detail}
+                  {/* Calculator List Integration */}
+                  <div className="h-64 mt-8 pt-8 border-t border-white/5 flex flex-col">
+                    <p className="text-[9px] font-black uppercase tracking-[0.4em] text-white/30 mb-4 font-mono">YIELD_PROJECTION_INDEX</p>
+                    <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-2">
+                      {selected.profitCurve?.map((p, i) => (
+                        <div 
+                          key={i}
+                          onClick={() => setShares(p.shares)}
+                          className={cn(
+                            "flex items-center justify-between p-4 rounded-2xl border transition-all duration-300 cursor-pointer group/item",
+                            shares === p.shares 
+                              ? "bg-[#00FF80]/15 border-[#00FF80]/50 shadow-[0_0_20px_rgba(0,255,128,0.1)]"
+                              : "bg-white/[0.02] border-white/5 hover:border-[#00FF80]/20 hover:bg-white/5"
+                          )}
+                        >
+                          <div className="flex items-center gap-4">
+                            <span className="text-[10px] font-mono text-white/20 group-hover/item:text-[#00FF80]/40 transition-colors">{String(i + 1).padStart(2, '0')}</span>
+                            <div className="flex flex-col">
+                              <span className="text-[8px] font-mono text-white/30 uppercase tracking-widest">Shares</span>
+                              <span className="text-sm font-black text-white">{p.shares}U</span>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-[8px] font-mono text-[#00FF80]/40 uppercase tracking-widest">Exp_Yield</span>
+                            <div className="text-sm font-black text-[#00FF80] group-hover/item:scale-105 transition-transform">${p.profit.toFixed(2)}</div>
+                          </div>
                         </div>
                       ))}
                     </div>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
 
-                    <div className={cn(
-                      "p-3 rounded-lg text-sm",
-                      riskProfile.color === "emerald" ? "bg-emerald-500/10" :
-                      riskProfile.color === "blue" ? "bg-blue-500/10" :
-                      riskProfile.color === "yellow" ? "bg-yellow-500/10" :
-                      "bg-red-500/10"
-                    )}>
-                      <span className="text-zinc-500">💡 </span>
-                      <span className="text-zinc-300">{riskProfile.recommendation}</span>
+        {/* STRATEGIC DELTA MODAL (Profit Calculator) */}
+        <AnimatePresence>
+          {showChartModal && selected && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 pointer-events-none">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setShowChartModal(false)}
+                className="absolute inset-0 bg-black/80 backdrop-blur-md pointer-events-auto"
+              />
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0, x: -50 }}
+                animate={{ scale: 1, opacity: 1, x: 0 }}
+                exit={{ scale: 0.9, opacity: 0, x: -50 }}
+                className="relative w-full max-w-4xl glass rounded-[3rem] border-[#00FF80]/30 p-12 pointer-events-auto shadow-[0_0_100px_rgba(0,255,128,0.2)] bg-[#020202]/90 flex flex-col gap-10"
+              >
+                <header className="flex justify-between items-start">
+                  <div>
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="w-3 h-3 bg-[#00FF80] rounded-full animate-ping" />
+                      <span className="text-[12px] font-black text-[#00FF80] uppercase tracking-[0.5em] font-mono">ANALYTICS_OVERRIDE</span>
+                    </div>
+                    <h2 className="text-5xl font-display font-black text-white uppercase italic tracking-tighter">
+                      Strategic<span className="text-[#00FF80]">_</span>Delta
+                    </h2>
+                  </div>
+                  <button 
+                    onClick={() => setShowChartModal(false)}
+                    className="p-4 bg-white/5 hover:bg-red-500/20 text-white/40 hover:text-red-500 rounded-3xl transition-all border border-white/10 hover:border-red-500/50"
+                  >
+                    <X size={32} />
+                  </button>
+                </header>
+
+                <div className="grid grid-cols-5 gap-8">
+                  {/* The Big Chart */}
+                  <div className="col-span-3 glass rounded-[2.5rem] p-8 bg-black/40 border-white/5 relative min-h-[400px]">
+                    <p className="text-[10px] font-black uppercase tracking-[0.5em] text-[#00FF80]/60 mb-8 font-mono">PROJECTION_MODEL_V2.4</p>
+                    <div className="h-[300px] w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={selected.profitCurve}>
+                          <defs>
+                            <linearGradient id="pG_Modal" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor="#00FF80" stopOpacity={0.5}/>
+                              <stop offset="100%" stopColor="#00FF80" stopOpacity={0}/>
+                            </linearGradient>
+                          </defs>
+                          <XAxis 
+                            dataKey="shares" 
+                            stroke="#ffffff20" 
+                            fontSize={10} 
+                            tickFormatter={(v) => `${v}U`}
+                          />
+                          <YAxis 
+                            stroke="#ffffff20" 
+                            fontSize={10} 
+                            tickFormatter={(v) => `$${v}`}
+                          />
+                          <Tooltip 
+                            contentStyle={{ 
+                              backgroundColor: '#000', 
+                              border: '1px solid rgba(0,255,128,0.2)',
+                              borderRadius: '12px',
+                              fontSize: '10px',
+                              fontFamily: 'monospace'
+                            }}
+                            itemStyle={{ color: '#00FF80' }}
+                          />
+                          <Area type="monotone" dataKey="profit" stroke="#00FF80" strokeWidth={5} fill="url(#pG_Modal)" animationDuration={2000} />
+                        </AreaChart>
+                      </ResponsiveContainer>
                     </div>
                   </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
+
+                  {/* Profit Calculator / List */}
+                  <div className="col-span-2 flex flex-col gap-4 overflow-hidden">
+                    <div className="glass rounded-[2rem] p-6 bg-black/60 border-[#00FF80]/20 flex flex-col h-full">
+                      <p className="text-[10px] font-black uppercase tracking-[0.4em] text-white/40 mb-6 font-mono">YIELD_ITERATIONS</p>
+                      <div className="flex-1 overflow-y-auto pr-4 custom-scrollbar space-y-3">
+                        {selected.profitCurve?.map((p, i) => (
+                          <div 
+                            key={i}
+                            className={cn(
+                              "flex items-center justify-between p-4 rounded-2xl border transition-all duration-300",
+                              shares >= p.shares && (i === selected.profitCurve!.length - 1 || shares < selected.profitCurve![i+1].shares)
+                                ? "bg-[#00FF80]/10 border-[#00FF80]/40 shadow-[0_0_15px_rgba(0,255,128,0.1)]"
+                                : "bg-white/5 border-white/5 opacity-40 hover:opacity-100"
+                            )}
+                          >
+                            <div className="flex flex-col">
+                              <span className="text-[9px] font-mono text-white/40 uppercase">Shares</span>
+                              <span className="text-sm font-black text-white">{p.shares}</span>
+                            </div>
+                            <div className="flex flex-col items-end">
+                              <span className="text-[9px] font-mono text-[#00FF80]/60 uppercase">Expected</span>
+                              <span className="text-sm font-black text-[#00FF80]">${p.profit.toFixed(2)}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-6 pt-6 border-t border-white/5">
+                        <div className="flex justify-between items-center bg-[#00FF80]/5 p-5 rounded-2xl border border-[#00FF80]/10">
+                          <span className="text-[10px] font-black text-white/60 uppercase font-mono">Optimal_Target</span>
+                          <span className="text-xl font-black text-[#00FF80] tracking-tighter">
+                            ${(selected.profitCurve?.[selected.profitCurve.length - 1]?.profit || 0).toFixed(2)} MAX
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+
       </div>
+
+      <style jsx global>{`
+        .glass-light {
+          background: rgba(255, 255, 255, 0.02);
+          border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: rgba(0, 255, 128, 0.1);
+          border-radius: 10px;
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function SidebarIcon({ icon, active = false }: { icon: React.ReactNode; active?: boolean }) {
+  return (
+    <div className={cn(
+      "w-12 h-12 rounded-2xl flex items-center justify-center transition-all duration-500 cursor-pointer",
+      active 
+        ? "bg-[#00FF80]/10 text-[#00FF80] border border-[#00FF80]/20 shadow-[0_0_20px_rgba(0,255,128,0.1)]" 
+        : "text-white/10 hover:text-white/40 hover:bg-white/5"
+    )}>
+      {icon}
     </div>
   );
 }
