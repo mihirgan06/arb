@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:all": "concurrently \"npm run dev\" \"npm run worker\"",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
@@ -13,6 +14,9 @@
     "bird:search": "tsx scripts/bird/searchTopMarkets.ts",
     "embeddings:backfill": "tsx scripts/embeddings/backfill.ts",
     "schema:apply": "tsx scripts/applySchema.ts"
+  },
+  "overrides": {
+    "sharp": "^0.33.0"
   },
   "dependencies": {
     "@polymarket/clob-client": "^5.2.1",
@@ -84,6 +88,7 @@
     "@types/pg": "^8.16.0",
     "@types/react": "^18",
     "@types/react-dom": "^18",
+    "concurrently": "^9.2.1",
     "dotenv": "^17.2.3",
     "eslint": "^8",
     "eslint-config-next": "14.2.35",
