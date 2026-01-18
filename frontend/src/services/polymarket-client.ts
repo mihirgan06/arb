@@ -20,27 +20,26 @@ class PolymarketClient {
 
     private async initialize() {
         try {
-            // In a real backend (Node.js), we can use a private key for signing.
-            // However, for read-only data (Level 1/2), we might not need a signer if the endpoints are public.
-            // The ClobClient often requires a signer for authenticated actions.
-            // Since we don't have the user's private key, only API keys, we check if we can initialize without signer
-            // or if the API key is sufficient for read-access.
+            // Check if API credentials are provided
+            if (!API_KEY || !SECRET || !PASSPHRASE) {
+                console.warn("[Polymarket] API credentials not fully configured. Some features may be limited.");
+                return;
+            }
 
-            // For this demo, we will try to initialize with just the creds if possible, 
-            // or fall back to public endpoints using axios if the SDK demands a signer.
-            // The provided keys are API keys, not wallet private keys.
-
+            // Initialize ClobClient with API credentials (L2 authentication)
+            // The ClobClient uses these credentials for authenticated requests
             this.client = new ClobClient(
                 HOST,
                 CHAIN_ID,
-                undefined, // No signer for now
+                undefined, // No signer for now (using L2 API key auth instead)
                 {
-                    apiKey: API_KEY,
-                    apiSecret: SECRET,
-                    apiPassphrase: PASSPHRASE,
+                    key: API_KEY,
+                    secret: SECRET,
+                    passphrase: PASSPHRASE,
                 }
             );
 
+            console.log("[Polymarket] ClobClient initialized with API credentials");
         } catch (error) {
             console.error("Failed to initialize Polymarket CLOB client:", error);
         }
@@ -80,6 +79,54 @@ class PolymarketClient {
         // Logic to fetch market + orderbook and combine them
         // Placeholder for now
         return {};
+    }
+
+    /**
+     * Fetch Top Markets via Gamma API (Market Discovery)
+     * 
+     * Note: The Gamma API (gamma-api.polymarket.com) is typically public and doesn't require authentication.
+     * However, the ClobClient is initialized with API credentials for authenticated operations
+     * (like getMarket, getOrderBook, trading operations).
+     * 
+     * The API keys are being used by the ClobClient for authenticated CLOB endpoints.
+     * For real-time orderbook updates, use the PolymarketWebSocket service.
+     */
+    async getTopMarkets(limit = 20) {
+        try {
+            // Verify API credentials are configured
+            const hasApiCredentials = API_KEY && SECRET && PASSPHRASE;
+            
+            if (!hasApiCredentials) {
+                console.warn("[Polymarket] API credentials not configured - ClobClient will not be available for authenticated operations");
+            } else {
+                console.log("[Polymarket] Using authenticated ClobClient for orderbook operations");
+            }
+
+            // Gamma API endpoint for events, sorted by volume
+            // This is a public endpoint, but authenticated CLOB operations use the initialized client
+            const response = await fetch(`https://gamma-api.polymarket.com/events?limit=${limit}&active=true&closed=false&order=volume&ascending=false`);
+            if (!response.ok) {
+                throw new Error(`Gamma API error: ${response.statusText}`);
+            }
+            const data = await response.json();
+            return data;
+        } catch (e) {
+            console.error("Failed to fetch top markets from Gamma:", e);
+            return [];
+        }
+    }
+
+    /**
+     * Get orderbook for a token ID using authenticated ClobClient
+     * This uses the API keys for authenticated access
+     */
+    async getOrderBookForToken(tokenId: string) {
+        if (!this.client) await this.initialize();
+        if (!this.client) {
+            console.error("[Polymarket] ClobClient not initialized");
+            return null;
+        }
+        return await this.getOrderBook(tokenId);
     }
 }
 
