@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useEffect, useState, useRef } from "react";
-import { Info, Loader2, RefreshCw, Sparkles, AlertTriangle } from "lucide-react";
+import { Info, Loader2, RefreshCw, Sparkles, AlertTriangle, Activity, Shield } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { calculateSlippageWarning } from "@/lib/slippage";
+import { calculateVolatility, calculateRiskProfile } from "@/lib/volatility";
 import {
   AreaChart,
   Area,
@@ -103,13 +104,54 @@ export function Dashboard() {
 
   const currentProfit = selected ? getProfit(selected.profitCurve, shares) : null;
 
-  // Calculate slippage warning
+  // Calculate bid-ask spreads
+  const spread1 = selected ? (selected.market1YesRange?.max || 0) - (selected.market1YesRange?.min || 0) : 0;
+  const spread2 = selected ? (selected.market2YesRange?.max || 0) - (selected.market2YesRange?.min || 0) : 0;
+
+  // Calculate slippage using proper formula:
+  // Slippage (%) = ((Executed Price − Expected Price) / Expected Price) × 100
   const slippageWarning = selected ? calculateSlippageWarning({
     tradeSize: shares,
-    bestBuyPrice: selected.market1YesRange?.midpoint || selected.buyPrice,
-    avgBuyExecutionPrice: selected.buyPrice,
-    bestSellPrice: selected.market2YesRange?.midpoint || selected.sellPrice,
-    avgSellExecutionPrice: selected.sellPrice,
+    expectedBuyPrice: selected.market1YesRange?.midpoint || selected.buyPrice,
+    executedBuyPrice: selected.buyPrice,
+    expectedSellPrice: selected.market2YesRange?.midpoint || selected.sellPrice,
+    executedSellPrice: selected.sellPrice,
+  }) : null;
+
+  // Calculate implied volatility using proper formula:
+  // σ ≈ √(2π / T) × (Option Price / Forward Price)
+  const volatility1 = selected ? calculateVolatility({
+    optionPrice: selected.market1YesDisplayPrice ?? selected.market1YesRange?.midpoint ?? 0.5,
+    bidAskSpread: spread1 || 0.02,
+    timeToExpiry: 0.25, // Assume 3 months average
+  }) : null;
+
+  const volatility2 = selected ? calculateVolatility({
+    optionPrice: selected.market2YesDisplayPrice ?? selected.market2YesRange?.midpoint ?? 0.5,
+    bidAskSpread: spread2 || 0.02,
+    timeToExpiry: 0.25,
+  }) : null;
+
+  // Combined volatility (take the higher one - conservative)
+  const combinedVolatility = volatility1 && volatility2 ? {
+    level: volatility1.impliedVol >= volatility2.impliedVol ? volatility1.level : volatility2.level,
+    impliedVol: Math.max(volatility1.impliedVol, volatility2.impliedVol),
+    impliedVolPercent: Math.max(volatility1.impliedVolPercent, volatility2.impliedVolPercent),
+    score: Math.max(volatility1.score, volatility2.score),
+    message: volatility1.impliedVol >= volatility2.impliedVol ? volatility1.message : volatility2.message,
+  } : null;
+
+  // Calculate comprehensive risk profile
+  const riskProfile = selected && currentProfit && slippageWarning && combinedVolatility ? calculateRiskProfile({
+    profitAmount: currentProfit.profit,
+    slippagePercent: slippageWarning.totalSlippagePercent,
+    slippageLevel: slippageWarning.slippageLevel,
+    impliedVol: combinedVolatility.impliedVol,
+    volatilityLevel: combinedVolatility.level,
+    maxShares: selected.maxProfitableShares,
+    currentShares: shares,
+    spread1: spread1 || 0.02,
+    spread2: spread2 || 0.02,
   }) : null;
 
   return (
@@ -240,22 +282,89 @@ export function Dashboard() {
                   </div>
 
                   {currentProfit && (
-                    <div className="grid grid-cols-3 gap-3 mb-4">
-                      <div className="p-3 rounded-lg bg-zinc-800">
-                        <div className="text-xs text-zinc-500">Cost</div>
-                        <div className="text-lg font-mono">${currentProfit.totalCost.toFixed(2)}</div>
-                      </div>
-                      <div className="p-3 rounded-lg bg-zinc-800">
-                        <div className="text-xs text-zinc-500">Revenue</div>
-                        <div className="text-lg font-mono">${currentProfit.totalRevenue.toFixed(2)}</div>
-                      </div>
-                      <div className="p-3 rounded-lg bg-emerald-500/10">
-                        <div className="text-xs text-zinc-500">Profit</div>
-                        <div className={cn("text-xl font-mono font-bold", currentProfit.profit > 0 ? "text-emerald-400" : "text-red-400")}>
-                          ${currentProfit.profit.toFixed(2)}
+                    <>
+                      <div className="grid grid-cols-3 gap-3 mb-4">
+                        <div className="p-3 rounded-lg bg-zinc-800">
+                          <div className="text-xs text-zinc-500">Cost</div>
+                          <div className="text-lg font-mono">${currentProfit.totalCost.toFixed(2)}</div>
+                        </div>
+                        <div className="p-3 rounded-lg bg-zinc-800">
+                          <div className="text-xs text-zinc-500">Revenue</div>
+                          <div className="text-lg font-mono">${currentProfit.totalRevenue.toFixed(2)}</div>
+                        </div>
+                        <div className="p-3 rounded-lg bg-emerald-500/10">
+                          <div className="text-xs text-zinc-500">Profit</div>
+                          <div className={cn("text-xl font-mono font-bold", currentProfit.profit > 0 ? "text-emerald-400" : "text-red-400")}>
+                            ${currentProfit.profit.toFixed(2)}
+                          </div>
                         </div>
                       </div>
-                    </div>
+                      
+                      {/* Slippage & Volatility Indicators */}
+                      <div className="grid grid-cols-2 gap-3 mb-4">
+                        {/* Slippage */}
+                        <div className={cn(
+                          "p-3 rounded-lg border",
+                          slippageWarning?.slippageLevel === "LOW" 
+                            ? "bg-emerald-500/10 border-emerald-500/30"
+                            : slippageWarning?.slippageLevel === "MEDIUM"
+                            ? "bg-yellow-500/10 border-yellow-500/30"
+                            : "bg-red-500/10 border-red-500/30"
+                        )}>
+                          <div className="flex items-center gap-2 mb-1">
+                            <AlertTriangle className={cn(
+                              "w-4 h-4",
+                              slippageWarning?.slippageLevel === "LOW" ? "text-emerald-400"
+                              : slippageWarning?.slippageLevel === "MEDIUM" ? "text-yellow-400"
+                              : "text-red-400"
+                            )} />
+                            <span className="text-xs text-zinc-400">Slippage</span>
+                          </div>
+                          <div className={cn(
+                            "text-lg font-semibold",
+                            slippageWarning?.slippageLevel === "LOW" ? "text-emerald-400"
+                            : slippageWarning?.slippageLevel === "MEDIUM" ? "text-yellow-400"
+                            : "text-red-400"
+                          )}>
+                            {slippageWarning?.totalSlippagePercent.toFixed(1) || "0"}%
+                          </div>
+                          <div className="text-xs text-zinc-500 mt-1">
+                            Buy: {slippageWarning?.buySlippagePercent.toFixed(1) || 0}% / Sell: {slippageWarning?.sellSlippagePercent.toFixed(1) || 0}%
+                          </div>
+                        </div>
+
+                        {/* Implied Volatility */}
+                        <div className={cn(
+                          "p-3 rounded-lg border",
+                          combinedVolatility?.level === "LOW" 
+                            ? "bg-emerald-500/10 border-emerald-500/30"
+                            : combinedVolatility?.level === "MEDIUM"
+                            ? "bg-yellow-500/10 border-yellow-500/30"
+                            : "bg-red-500/10 border-red-500/30"
+                        )}>
+                          <div className="flex items-center gap-2 mb-1">
+                            <Activity className={cn(
+                              "w-4 h-4",
+                              combinedVolatility?.level === "LOW" ? "text-emerald-400"
+                              : combinedVolatility?.level === "MEDIUM" ? "text-yellow-400"
+                              : "text-red-400"
+                            )} />
+                            <span className="text-xs text-zinc-400">Implied Vol (σ)</span>
+                          </div>
+                          <div className={cn(
+                            "text-lg font-semibold",
+                            combinedVolatility?.level === "LOW" ? "text-emerald-400"
+                            : combinedVolatility?.level === "MEDIUM" ? "text-yellow-400"
+                            : "text-red-400"
+                          )}>
+                            {combinedVolatility?.impliedVolPercent || 0}%
+                          </div>
+                          <div className="text-xs text-zinc-500 mt-1">
+                            {combinedVolatility?.level || "LOW"} uncertainty
+                          </div>
+                        </div>
+                      </div>
+                    </>
                   )}
 
                   <div className="h-52">
@@ -306,6 +415,69 @@ export function Dashboard() {
                     </div>
                   </div>
                 </div>
+
+                {/* Risk Profile Card */}
+                {riskProfile && (
+                  <div className={cn(
+                    "p-5 rounded-xl border",
+                    riskProfile.color === "emerald" ? "bg-emerald-500/5 border-emerald-500/30" :
+                    riskProfile.color === "blue" ? "bg-blue-500/5 border-blue-500/30" :
+                    riskProfile.color === "yellow" ? "bg-yellow-500/5 border-yellow-500/30" :
+                    "bg-red-500/5 border-red-500/30"
+                  )}>
+                    <div className="flex items-center gap-3 mb-3">
+                      <Shield className={cn(
+                        "w-5 h-5",
+                        riskProfile.color === "emerald" ? "text-emerald-400" :
+                        riskProfile.color === "blue" ? "text-blue-400" :
+                        riskProfile.color === "yellow" ? "text-yellow-400" :
+                        "text-red-400"
+                      )} />
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold">Risk Profile:</span>
+                        <span className={cn(
+                          "px-2 py-0.5 rounded text-sm font-bold",
+                          riskProfile.color === "emerald" ? "bg-emerald-500/20 text-emerald-400" :
+                          riskProfile.color === "blue" ? "bg-blue-500/20 text-blue-400" :
+                          riskProfile.color === "yellow" ? "bg-yellow-500/20 text-yellow-400" :
+                          "bg-red-500/20 text-red-400"
+                        )}>
+                          {riskProfile.emoji} {riskProfile.overall}
+                        </span>
+                      </div>
+                    </div>
+
+                    <p className={cn(
+                      "text-sm mb-3",
+                      riskProfile.color === "emerald" ? "text-emerald-300" :
+                      riskProfile.color === "blue" ? "text-blue-300" :
+                      riskProfile.color === "yellow" ? "text-yellow-300" :
+                      "text-red-300"
+                    )}>
+                      {riskProfile.summary}
+                    </p>
+
+                    <div className="space-y-1 mb-4">
+                      {riskProfile.details.map((detail, i) => (
+                        <div key={i} className="flex items-center gap-2 text-xs text-zinc-400">
+                          <span className="w-1.5 h-1.5 rounded-full bg-zinc-600" />
+                          {detail}
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className={cn(
+                      "p-3 rounded-lg text-sm",
+                      riskProfile.color === "emerald" ? "bg-emerald-500/10" :
+                      riskProfile.color === "blue" ? "bg-blue-500/10" :
+                      riskProfile.color === "yellow" ? "bg-yellow-500/10" :
+                      "bg-red-500/10"
+                    )}>
+                      <span className="text-zinc-500">💡 </span>
+                      <span className="text-zinc-300">{riskProfile.recommendation}</span>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

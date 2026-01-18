@@ -1,62 +1,101 @@
 export interface SlippageInput {
   tradeSize: number;
-  bestBuyPrice: number;
-  avgBuyExecutionPrice: number;
-  bestSellPrice: number;
-  avgSellExecutionPrice: number;
+  expectedBuyPrice: number;  // Midpoint of bid/ask before trade
+  executedBuyPrice: number;  // Price you actually get filled at
+  expectedSellPrice: number; // Midpoint of bid/ask before trade
+  executedSellPrice: number; // Price you actually get filled at
 }
 
 export interface SlippageWarning {
   slippageLevel: "LOW" | "MEDIUM" | "HIGH";
   message: string;
-  buySlippageCents: number;
-  sellSlippageCents: number;
+  buySlippagePercent: number;
+  sellSlippagePercent: number;
+  totalSlippagePercent: number;
 }
 
+/**
+ * Calculate slippage using the standard formula:
+ * Slippage (%) = ((Executed Price − Expected Price) / Expected Price) × 100
+ * 
+ * For buys: positive slippage = paying more than expected (bad)
+ * For sells: positive slippage = receiving less than expected (bad)
+ */
 export function calculateSlippageWarning(input: SlippageInput): SlippageWarning {
-  const { bestBuyPrice, avgBuyExecutionPrice, bestSellPrice, avgSellExecutionPrice } = input;
+  const { 
+    expectedBuyPrice, 
+    executedBuyPrice, 
+    expectedSellPrice, 
+    executedSellPrice 
+  } = input;
 
-  // Calculate slippage in cents (prices are in dollars, so multiply by 100)
-  const buySlippageCents = (avgBuyExecutionPrice - bestBuyPrice) * 100;
-  const sellSlippageCents = (bestSellPrice - avgSellExecutionPrice) * 100;
+  // Buy slippage: positive means you paid more than expected
+  const buySlippagePercent = expectedBuyPrice > 0 
+    ? ((executedBuyPrice - expectedBuyPrice) / expectedBuyPrice) * 100 
+    : 0;
+
+  // Sell slippage: positive means you received less than expected
+  const sellSlippagePercent = expectedSellPrice > 0 
+    ? ((expectedSellPrice - executedSellPrice) / expectedSellPrice) * 100 
+    : 0;
+
+  // Total cost of slippage (both directions hurt you)
+  const totalSlippagePercent = Math.max(0, buySlippagePercent) + Math.max(0, sellSlippagePercent);
 
   // Round to 2 decimal places
-  const buySlip = Math.round(buySlippageCents * 100) / 100;
-  const sellSlip = Math.round(sellSlippageCents * 100) / 100;
+  const buySlip = Math.round(buySlippagePercent * 100) / 100;
+  const sellSlip = Math.round(sellSlippagePercent * 100) / 100;
+  const totalSlip = Math.round(totalSlippagePercent * 100) / 100;
 
-  // Determine slippage level
-  const maxSlip = Math.max(buySlip, sellSlip);
-  const slippageDiff = Math.abs(buySlip - sellSlip);
-  const isAsymmetric = slippageDiff > 1; // More than 1¢ difference
-
+  // Determine slippage level based on percentage
+  const maxSlip = Math.max(Math.abs(buySlip), Math.abs(sellSlip));
+  
   let slippageLevel: "LOW" | "MEDIUM" | "HIGH";
   let message: string;
 
   if (maxSlip < 0.5) {
     slippageLevel = "LOW";
-    message = "Price impact is minimal at this size.";
-  } else if (maxSlip <= 2) {
+    message = "Excellent execution. Minimal price impact.";
+  } else if (maxSlip < 2) {
     slippageLevel = "MEDIUM";
-    if (isAsymmetric) {
+    if (Math.abs(buySlip - sellSlip) > 1) {
       const worseSide = buySlip > sellSlip ? "buying" : "selling";
-      message = `Moderate price impact, especially when ${worseSide}. Consider smaller size.`;
+      message = `~${totalSlip.toFixed(1)}% slippage, mostly when ${worseSide}.`;
     } else {
-      message = "Moderate price impact at this size. Consider trading smaller.";
+      message = `~${totalSlip.toFixed(1)}% slippage. Consider smaller size.`;
     }
   } else {
     slippageLevel = "HIGH";
-    if (isAsymmetric) {
+    if (Math.abs(buySlip - sellSlip) > 1) {
       const worseSide = buySlip > sellSlip ? "buying" : "selling";
-      message = `Significant price impact when ${worseSide}. This may reduce or eliminate profit.`;
+      message = `${totalSlip.toFixed(1)}% slippage, especially ${worseSide}. May eliminate profit.`;
     } else {
-      message = "Significant price impact at this size. Profit may be reduced or eliminated.";
+      message = `${totalSlip.toFixed(1)}% slippage. Profit likely reduced significantly.`;
     }
   }
 
   return {
     slippageLevel,
     message,
-    buySlippageCents: buySlip,
-    sellSlippageCents: sellSlip,
+    buySlippagePercent: buySlip,
+    sellSlippagePercent: sellSlip,
+    totalSlippagePercent: totalSlip,
   };
+}
+
+// Legacy function for backward compatibility
+export function calculateSlippageFromPrices(input: {
+  tradeSize: number;
+  bestBuyPrice: number;
+  avgBuyExecutionPrice: number;
+  bestSellPrice: number;
+  avgSellExecutionPrice: number;
+}): SlippageWarning {
+  return calculateSlippageWarning({
+    tradeSize: input.tradeSize,
+    expectedBuyPrice: input.bestBuyPrice,
+    executedBuyPrice: input.avgBuyExecutionPrice,
+    expectedSellPrice: input.bestSellPrice,
+    executedSellPrice: input.avgSellExecutionPrice,
+  });
 }
